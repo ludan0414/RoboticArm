@@ -1,0 +1,116 @@
+# Scene static TF and Gazebo spawn poses. All world-frame entries are relative to world origin.
+#
+# SIMULATION DEFAULTS. Gate 3 on the real cell must copy this file and replace
+# pedestal / container / opening / pickup numbers with tape-measure values.
+# Do not feed this file to scene_hardware.launch.py as if it were surveyed.
+#
+# TF publishing (container_tf_publisher):
+#   Robot base: URDF world_base -> elfin_base_link (robot_state_publisher)
+#   Pedestal enabled: world -> pedestal_link (visual reference only)
+#   Container: world -> container_link -> container_opening_frame (static_transforms below)
+#   Pickup platform enabled: world -> pickup_platform_link -> pickup_platform_top
+#
+# Pedestal enabled:
+#   pedestal.size[2] = pedestal height = robot base offset above pedestal origin
+#   URDF world_base carries the full composed base pose:
+#     pedestal.translation + pedestal.rotation_rpy + robot.rotation_rpy
+#   Gazebo and robot_state_publisher share that patched world_base. The gz
+#   model is spawned at the world origin so the weld is not applied twice.
+#
+# Pedestal disabled:
+#   URDF world_base joint carries robot.base_height; Gazebo spawn z = 0
+#
+# Container mesh rotation is baked in airport_container_real STL; container_link uses translation only.
+# Container semantic bounds live here too; collision geometry comes from:
+#   luggage_gazebo/models/<gazebo.container_model>/meshes/container_collision.stl
+# inner.chamfer clips the usable AABB to the 7-face hull (two pentagonal
+# end walls). Opening.aperture is a rectangle on the -X pentagon, not the
+# full face.
+#
+# Opening geometry:
+#   opening.aperture.corners — four [x,y,z] points in container_link (CCW viewed from outside).
+#   container_opening_frame — TF anchor / look-at reference (typically aperture centroid).
+#   opening.width/height — legacy symmetric fallback when aperture.corners is omitted.
+
+world_frame: world
+
+pedestal:
+  enabled: true
+  size: [1.05, 0.74, 0.86]
+  translation: [0.0, 0.0, 0.0]
+  rotation_rpy: [0.0, 0.0, 1.5708]  # 90 deg: long edge (1.05 m) along world Y
+  gazebo_model: robot_pedestal
+
+robot:
+  base_frame: elfin_base_link
+  rotation_rpy: [0.0, 0.0, 0.0]
+
+container:
+  # Semantic workspace bounds for perception, placement, packing, and view planning.
+  # These dimensions do not generate collision geometry; MoveIt uses the real STL mesh.
+  outer:
+    length: 1.57
+    width: 2.07
+    height: 2.12
+  inner:
+    length: 1.49
+    width: 1.97
+    # Z coordinates are expressed in container_link. The STL origin is the
+    # exterior base bottom; the usable cargo floor is the slab top, not Z=0.
+    floor_z: 0.53
+    ceiling_z: 2.01
+    # Legacy upper-Z coordinate retained for callers not yet migrated to
+    # floor_z/ceiling_z. It is NOT the usable vertical span.
+    height: 2.01
+    # Cuboid minus a triangular prism along +Y (ULD contour, from the STL).
+    # End walls (±X) become pentagons; the -X pentagon holds the aperture.
+    chamfer:
+      side: positive_y
+      floor_y: 0.55
+      wall_z: 0.90
+  opening:
+    side: negative_x
+    # Derived spans from aperture.corners (kept for legacy callers).
+    width: 1.33
+    height: 1.41
+    aperture:
+      corners:
+        - [-0.745, -0.928, 0.597]
+        - [-0.745,  0.398, 0.597]
+        - [-0.745,  0.398, 2.009]
+        - [-0.745, -0.928, 2.009]
+  box_catalog_config: box_catalog.yaml.example
+
+static_transforms:
+  - parent: world
+    child: container_link
+#    translation: [1.5, -0.8, 0.0]
+    translation: [1.5, 0.0, 0.0]
+    rotation_rpy: [0.0, 0.0, 0.0]
+
+  - parent: container_link
+    child: container_opening_frame
+    translation: [-0.745, -0.27, 1.30]
+    rotation_rpy: [0.0, 0.0, 0.0]
+
+# Pickup platform: independent static platform where suitcases are spawned.
+# Same height as robot pedestal so the robot arm can reach the suitcase.
+# Model origin at bottom-center (same convention as robot_pedestal).
+pickup_platform:
+  enabled: true
+  size: [1.0, 1.0, 0.86]
+  translation: [-1.0, 0.0, 0.0]
+  rotation_rpy: [0.0, 0.0, 0.0]
+  gazebo_model: pickup_platform
+
+# Pickup source: where suitcases appear on the platform top surface.
+# When pickup_platform is enabled, translation is LOCAL to the platform top frame
+# (i.e. relative to the center of the platform top surface, z=0 means on top).
+# When pickup_platform is disabled, translation is in world frame (legacy mode).
+pickup_source:
+  parent: pickup_platform_top
+  translation: [0.0, 0.0, 0.0]
+  rotation_rpy: [0.0, 0.0, 0.0]
+
+gazebo:
+  container_model: airport_container_real

@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<!-- Saved by eof_mount_stack_tune_gui.py -->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:property name="adapter_mount_parent" value="suction_panel"/>
+  <xacro:property name="adapter_mount_xyz" value="0.016800 -0.015600 0.070200"/>
+  <xacro:property name="adapter_mount_rpy" value="1.57707939 -0.00003948 -3.13530959"/>
+</robot>

@@ -2,6 +2,26 @@
 
 This workspace is used by several CLI agents at once (Cursor, Claude Code,
 Codex, others). Follow these files; do not invent a parallel log tree.
+`CLAUDE.md` points to this contract. At session start, check the matching
+entries in `docs/agents/discuss/OPEN.md` when that mailbox exists; keep role
+logs and cross-agent discussion under `docs/agents/`. Some branches do not
+contain that directory, so apply its procedures only when the files exist.
+
+## Repository areas
+
+- `deployment_ws/` is the real-robot deployment workspace. It contains the
+  Elfin CPS trajectory executor, site configuration, launch files, and
+  hardware scripts. Read `deployment_ws/README.md` before changing its runtime
+  or running hardware commands; use the correct ROS distribution and site
+  safety gates.
+- `policy/` contains the copied Newton container demo: packing policies,
+  planning and IK code, simulation/viewer scripts, sample data, model
+  checkpoints, and the local `vendor/roboticarm` scene assets. Run its scripts
+  from `policy/` using the Newton environment; see `policy/README.md` for
+  examples. Its IK checks and viewer playback are simulation workflows, not
+  direct control of the real arm.
+
+## Shared workflow
 
 1. **Content index** — `docs/agents/INDEX.md` (read this first; follow only
    links needed for the assigned task)

@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<sdf version="1.6">
+  <model name="airport_container_real">
+    <static>true</static>
+    <link name="container_link">
+      <pose>0 0 0 0 0 0</pose>
+      <visual name="visual">
+        <geometry>
+          <mesh>
+            <uri>model://airport_container_real/meshes/container_visual.stl</uri>
+            <scale>1 1 1</scale>
+          </mesh>
+        </geometry>
+        <material>
+          <ambient>0.25 0.35 0.45 1</ambient>
+          <diffuse>0.35 0.45 0.55 1</diffuse>
+        </material>
+      </visual>
+      <!-- Physics mesh is a 2k-face decimation of container_collision.stl.
+           Visual stays high-res. MoveIt still loads the 8k collision STL. -->
+      <collision name="collision_mesh">
+        <geometry>
+          <mesh>
+            <uri>model://airport_container_real/meshes/container_collision_physics.stl</uri>
+            <scale>1 1 1</scale>
+          </mesh>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>0.6</mu>
+              <mu2>0.6</mu2>
+            </ode>
+          </friction>
+        </surface>
+      </collision>
+    </link>
+  </model>
+</sdf>

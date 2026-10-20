@@ -1,0 +1,128 @@
+[
+  {
+    "seed": 1,
+    "container": {
+      "length": 1.49,
+      "width": 1.97,
+      "height": 1.4799999999999998,
+      "flat_y": 1.5350000000000001,
+      "slope_rise": 0.37,
+      "door_y0": 0.05699999999999994,
+      "door_y1": 1.383,
+      "door_z0": 0.06699999999999995,
+      "door_z1": 1.4789999999999999,
+      "floor_z": 0.53,
+      "door_x": -0.745,
+      "inner_y0": -0.985
+    },
+    "steps": [
+      {
+        "incoming": {
+          "id": "B1",
+          "dims": [
+            0.502,
+            0.305,
+            0.238
+          ]
+        },
+        "actions": [
+          {
+            "kind": "place",
+            "box": {
+              "id": "B1",
+              "dims": [
+                0.305,
+                0.502,
+                0.238
+              ],
+              "pos": [
+                0.4,
+                0.057,
+                0.0
+              ]
+            },
+            "route": [
+              [
+                -0.405,
+                0.057,
+                0.4
+              ],
+              [
+                0.4,
+                0.057,
+                0.4
+              ],
+              [
+                0.4,
+                0.057,
+                0.0
+              ]
+            ]
+          }
+        ],
+        "status": "placed",
+        "boxes": [
+          {
+            "id": "B1",
+            "dims": [
+              0.305,
+              0.502,
+              0.238
+            ],
+            "pos": [
+              0.4,
+              0.057,
+              0.0
+            ]
+          }
+        ],
+        "utilization": 0.0086
+      },
+      {
+        "incoming": {
+          "id": "B2",
+          "dims": [
+            0.569,
+            0.343,
+            0.194
+          ]
+        },
+        "actions": [],
+        "status": "blocked",
+        "boxes": [
+          {
+            "id": "B1",
+            "dims": [
+              0.305,
+              0.502,
+              0.238
+            ],
+            "pos": [
+              0.4,
+              0.057,
+              0.0
+            ]
+          }
+        ],
+        "utilization": 0.0086
+      }
+    ],
+    "relocations": 0,
+    "ik": {
+      "enabled": true,
+      "solver": "newton.ik.IKSolver",
+      "scene_config": "elfin_humble_ws/src/luggage_description/config/scene_tf.yaml",
+      "box_size_m": [
+        0.55,
+        0.4,
+        0.25
+      ],
+      "size_profile": "luggage_20_32",
+      "route_sample_step_m": 0.05,
+      "settle_clearance_m": 0.02,
+      "position_tolerance_m": 0.003,
+      "rotation_tolerance_rad": 0.035,
+      "collision_check": "non-base arm links vs container mesh"
+    }
+  }
+]

@@ -1,0 +1,22 @@
+{"epoch": 1, "mean_reward": 0.1301928162574768, "mean_placed": 8.666666666666666, "mean_volume_utilization": 0.11533826152372854, "mean_depth_value": 0.059418231494362685}
+{"epoch": 10, "mean_reward": 0.1341370940208435, "mean_placed": 9.333333333333334, "mean_volume_utilization": 0.11831275082959286, "mean_depth_value": 0.06329736899601075}
+{"epoch": 20, "mean_reward": 0.13015291094779968, "mean_placed": 8.666666666666666, "mean_volume_utilization": 0.11583044736712583, "mean_depth_value": 0.05728984690100399}
+{"epoch": 30, "mean_reward": 0.12048475444316864, "mean_placed": 8.333333333333334, "mean_volume_utilization": 0.1074247924945211, "mean_depth_value": 0.05223981981408047}
+{"epoch": 40, "mean_reward": 0.126033216714859, "mean_placed": 8.833333333333334, "mean_volume_utilization": 0.11147591815952941, "mean_depth_value": 0.05822917303052103}
+{"epoch": 50, "mean_reward": 0.12608575820922852, "mean_placed": 8.333333333333334, "mean_volume_utilization": 0.11167744252129552, "mean_depth_value": 0.05763321805284896}
+{"epoch": 60, "mean_reward": 0.11757799237966537, "mean_placed": 8.25, "mean_volume_utilization": 0.10418724746402468, "mean_depth_value": 0.05356295707564738}
+{"epoch": 70, "mean_reward": 0.12007083743810654, "mean_placed": 8.5, "mean_volume_utilization": 0.10589582444263679, "mean_depth_value": 0.056700048232489}
+{"epoch": 80, "mean_reward": 0.1324767768383026, "mean_placed": 9.083333333333334, "mean_volume_utilization": 0.11622878322008577, "mean_depth_value": 0.06499193783078361}
+{
+  "checkpoint": "packing_policy.pt",
+  "sample": "packing_policy_sample.json",
+  "eval_placed": 10,
+  "eval_utilization": 0.12546105178061998,
+  "eval_depth_value": 0.40821462769496647,
+  "eval_mean_reward": 0.15755862598426368,
+  "baseline_mean_reward": 0.15719152844835133,
+  "eval_mean_placed": 10.0,
+  "baseline_mean_placed": 10.0,
+  "parallel_envs": 12,
+  "parameters": 1425
+}

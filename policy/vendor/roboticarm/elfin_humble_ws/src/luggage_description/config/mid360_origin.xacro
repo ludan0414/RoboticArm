@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+<!-- mid360_mount from D555-referenced ICP 2026-09-11, mount xyz 0.01 0.13 0.015 m. Camera Layer 3 is the reference. livox_optical/IMU stay handbook. CAD pad was 0.022 0.103 0.038 / 0 pi/2 pi/2. -->
+<!-- Mid-360S frames (Livox Mid-360 / Mid-360S user manual).
+
+     livox_frame (point-cloud / ROS header):
+       Origin = optical centre of the LiDAR (not the housing bottom, not IMU).
+       +X = default heading (out the "front"), +Y = left, +Z = up, right-handed.
+       Driver publishes /livox/lidar in this frame.
+
+     livox_imu_frame:
+       Axes parallel to livox_frame (no extra rotation in the manual).
+       Origin in livox_frame = (11.0, 23.29, -44.12) mm.
+       /livox/imu still uses header frame_id=livox_frame; accel is in g.
+
+     mid360_mount_frame:
+       Seating plane is the ~65 x 65 mm +Y face of arm_realsense_v1.3
+       (centroid ~22, 103, 38 mm). rpy 0, π/2, π/2 puts livox +Z along
+       adapter +Y (out of that pad) and livox +X along adapter -Z (same
+       heading as camera_link +X). Optical centre is still +47 mm along
+       mount Z from the plate (handbook). -->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:property name="mid360_mount_xyz" value="0.010000 0.130000 0.015000"/>
+  <xacro:property name="mid360_mount_rpy" value="0.16221799 1.63740799 1.77427038"/>
+  <!-- Base of the sensor -> livox_frame (optical / point-cloud origin). -->
+  <xacro:property name="livox_optical_xyz" value="0.000 0.000 0.047"/>
+  <xacro:property name="livox_optical_rpy" value="0 0 0"/>
+  <!-- livox_frame -> livox_imu_frame, metres. -->
+  <xacro:property name="livox_imu_xyz" value="0.01100 0.02329 -0.04412"/>
+  <xacro:property name="livox_imu_rpy" value="0 0 0"/>
+  <!-- Sim gpu_lidar (repeating raster, not the real non-repetitive scan).
+       Handbook FOV 360° × (−7° … +52°); typical range 40 m @ 10% reflectivity.
+       Min 0.1 m matches the close-range blind zone. -->
+  <xacro:property name="livox_sim_update_hz" value="10.0"/>
+  <xacro:property name="livox_sim_h_samples" value="360"/>
+  <xacro:property name="livox_sim_v_samples" value="32"/>
+  <xacro:property name="livox_sim_h_min" value="-3.14159265"/>
+  <xacro:property name="livox_sim_h_max" value="3.14159265"/>
+  <xacro:property name="livox_sim_v_min" value="-0.12217305"/>
+  <xacro:property name="livox_sim_v_max" value="0.90757121"/>
+  <xacro:property name="livox_sim_range_min" value="0.1"/>
+  <xacro:property name="livox_sim_range_max" value="40.0"/>
+</robot>

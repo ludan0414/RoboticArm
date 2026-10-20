@@ -1,0 +1,12 @@
+Gate 1d after YOLO-bbox crop  2026-09-15 19:22 +08  ROS_DOMAIN_ID=7
+
+Design: cargo ROI is YOLO RGB bbox projected through aligned depth.
+scene_tf pickup square is NOT the detect crop (crop_to_workspace=false).
+hardware_pick sets workspace_accept_enabled=false (sim yaml still true).
+
+timing: top_crop_workspace=false  top_input=top_cropped=8644
+
+PASS B 3/3  --detect-only --skip-observe
+1. xyz=(-0.214,0.963,0.099) 0.961x0.382x0.243 top_z=0.220 valid=True/True
+2. xyz=(-0.226,0.963,0.099) 0.955x0.379x0.243 top_z=0.220 valid=True/True
+3. xyz=(-0.214,0.960,0.099) 0.966x0.383x0.243 top_z=0.220 valid=True/True

@@ -1,0 +1,26 @@
+{"epoch": 1, "mean_reward": 0.1240888461470604, "mean_placed": 8.333333333333334, "mean_volume_utilization": 0.10975939792119217, "mean_depth_value": 0.05731779979093694}
+{"epoch": 10, "mean_reward": 0.12415459007024765, "mean_placed": 8.666666666666666, "mean_volume_utilization": 0.10998375638302942, "mean_depth_value": 0.056683298304724274}
+{"epoch": 20, "mean_reward": 0.13368356227874756, "mean_placed": 8.833333333333334, "mean_volume_utilization": 0.11880684756490839, "mean_depth_value": 0.05950690015966484}
+{"epoch": 30, "mean_reward": 0.11233442276716232, "mean_placed": 8.0, "mean_volume_utilization": 0.10098087873173765, "mean_depth_value": 0.045414182590079184}
+{"epoch": 40, "mean_reward": 0.11602054536342621, "mean_placed": 8.75, "mean_volume_utilization": 0.10311974111909299, "mean_depth_value": 0.051603198448297076}
+{"epoch": 50, "mean_reward": 0.11731737852096558, "mean_placed": 8.0, "mean_volume_utilization": 0.10371314868302291, "mean_depth_value": 0.05441694624848147}
+{"epoch": 60, "mean_reward": 0.12171870470046997, "mean_placed": 9.0, "mean_volume_utilization": 0.10790908776891678, "mean_depth_value": 0.055238485897804744}
+{"epoch": 70, "mean_reward": 0.1219484806060791, "mean_placed": 8.333333333333334, "mean_volume_utilization": 0.10828639919466641, "mean_depth_value": 0.05464835987216166}
+{"epoch": 80, "mean_reward": 0.13550753891468048, "mean_placed": 9.0, "mean_volume_utilization": 0.11909869773426933, "mean_depth_value": 0.06563533311609444}
+{
+  "checkpoint": "packing_policy_stateaware.pt",
+  "sample": "packing_policy_stateaware_sample.json",
+  "eval_placed": 10,
+  "eval_utilization": 0.12546105178061998,
+  "eval_depth_value": 0.40821462769496647,
+  "eval_mean_reward": 0.15773810477500738,
+  "eval_reward_std": 0.01495736231340083,
+  "baseline_mean_reward": 0.15719152844835133,
+  "baseline_reward_std": 0.015271736989324932,
+  "mean_reward_delta": 0.000546576326656039,
+  "baseline_win_rate": 0.65625,
+  "eval_mean_placed": 10.0,
+  "baseline_mean_placed": 10.0,
+  "parallel_envs": 12,
+  "parameters": 2321
+}

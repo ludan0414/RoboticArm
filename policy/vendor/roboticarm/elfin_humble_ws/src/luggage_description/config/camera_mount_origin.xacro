@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<!-- Layer 3 from CC600 ChArUco eye-in-hand 2026-09-11 poses 21-38 (TSAI/PARK/DANIILIDIS mean). Do not edit Layers 1-2. -->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:property name="cam_mount_parent" value="eef_mount_adapter"/>
+  <xacro:property name="cam_mount_xyz" value="-0.028833 0.107910 -0.077120"/>
+  <xacro:property name="cam_mount_rpy" value="-0.01784105 1.39066481 1.56765511"/>
+</robot>

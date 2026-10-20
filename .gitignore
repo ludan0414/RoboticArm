@@ -45,3 +45,10 @@ docs/plans/
 .env
 .env.*
 orin_perception_pack_*.tar.gz
+.wp
+
+# policy
+
+policy/.warp_cache/**
+policy/__pycache__/**
+!*.pt
