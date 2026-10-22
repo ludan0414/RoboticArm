@@ -18,14 +18,32 @@ from run_pick_place_pipeline import Pipeline, STAGE_NAMES
 from online_packing_real import Hull
 from roboticarm_newton import DEFAULT_SOURCE
 from newton_ik_planner import tool_down_quaternion
+from ground_carry_clearance import pedestal_geometry, box_bottom, box_pedestal_separated, outside_staging_xy
 from verify_pick_place_run import verify
 
 
 class BridgeCompiler(MotionCompiler):
     checking = False
     validate_motion = True
+    high_carry = False
+
+    def payload_contact_failures(self):
+        failures = super().payload_contact_failures()
+        if self.box_pose is not None and self.attached:
+            pose = self.state.body_q.numpy()[self.body_ids[self.box_id]]
+            bottom = box_bottom(pose, self.current_box_size)
+            if not box_pedestal_separated(pose, self.current_box_size, self.pedestal, .05):
+                failures.append(dict(reason="PEDESTAL_CLEARANCE", required_margin_m=.05))
+            if self.high_carry and bottom < self.high_carry_bottom_z - .003:
+                failures.append(dict(reason="HIGH_CARRY_FLOOR", box_bottom_z_m=bottom,
+                                     minimum_z_m=self.high_carry_bottom_z))
+        return failures
 
     def solve(self, point, yaw):
+        # Transit goals need practical positioning, not contact precision.
+        # Cache identity includes this tolerance; Pick stays at the default.
+        self.ik.position_tolerance_m = .01 if self.stage in (
+            "RETURN", "APPROACH", "LIFT", "CARRY") else .003
         if self.validate_motion:
             return super().solve(point, yaw, orientation_xyzw=tool_down_quaternion(yaw))
         ok, joints = self.ik.solve_world_pose(point, yaw, check_collision=False,
@@ -71,7 +89,10 @@ class BridgeCompiler(MotionCompiler):
             Pipeline.frame(self)
             self.body_frames.append(self.state.body_q.numpy().copy())
             return
-        super().frame()
+        # valid() checks robot/static and payload contacts together; avoid
+        # repeating the same expensive collision pass three times per frame.
+        Pipeline.frame(self)
+        self.body_frames.append(self.state.body_q.numpy().copy())
         if self.checking:
             if self.box_pose is None and self.placed:
                 self.check_payload_contacts()
@@ -80,6 +101,7 @@ class BridgeCompiler(MotionCompiler):
                     frame=len(self.history)-1, q=self.q.tolist(), static=self.ik.last_collision_pairs,
                     payload=self.payload_contact_failures()))
                 raise RuntimeError(f"collision in {self.stage} for {self.box_id}")
+            self.payload_checked_frames += 1
 
     def joint_path(self, start, goal, label):
         self.enter(label)
@@ -112,13 +134,14 @@ class BridgeCompiler(MotionCompiler):
         bodies = self.state.body_q.numpy()
         self.box_pose = bodies[self.body_ids[self.box_id]].copy()
         if self.validate_motion:
-            self.check_payload_contacts()
+            self.payload_checked_frames += 1  # valid() above already checked contacts
         self.history.append((self.q.copy(), bodies[self.contact_body].copy(), self.box_pose.copy(),
                              stage, self.box_id, self.attached))
         self.body_frames.append(bodies.copy())
 
 
-def prepare_bridge(base_folder, output, feeder_xy, *, validate=True, observe_at_base=False):
+def prepare_bridge(base_folder, output, feeder_xy, *, validate=True, observe_at_base=False,
+                   feeder_world_xy=None):
     base_folder, output = Path(base_folder), Path(output)
     source_plan = (check_bundle(base_folder) if validate else
                    json.loads((base_folder/"plan.json").read_text(encoding="utf-8")))
@@ -128,11 +151,19 @@ def prepare_bridge(base_folder, output, feeder_xy, *, validate=True, observe_at_
     manifest = json.loads((output/"input.json").read_text(encoding="utf-8"))
     scene = output/"scene_tf.yaml"
     hull = Hull.from_config(yaml.safe_load(scene.read_text(encoding="utf-8")))
+    scene_config = yaml.safe_load(scene.read_text(encoding="utf-8"))
     plan = copy.deepcopy(source_plan)
     plan.pop("feeder_center_container_door_floor_m", None)
-    plan["feeder"] = dict(frame="elfin_base", xy_m=list(feeder_xy), bottom_world_z_m=0)
+    plan["feeder"] = dict(frame="world" if feeder_world_xy is not None else "elfin_base",
+                          xy_m=list(feeder_world_xy if feeder_world_xy is not None else feeder_xy),
+                          bottom_world_z_m=0)
+    plan["ground_carry_clearance"] = dict(pedestal_margin_m=.05,
+        connector_bottom_above_pedestal_m=.15,
+        strategy="outer_lift_retract_outside_pedestal_high_lift_checked_carry")
     write_json(output/"plan.json", plan)
     run = BridgeCompiler(output)
+    run.pedestal = pedestal_geometry(scene_config)
+    run.high_carry_bottom_z = float(run.pedestal[0][2] + run.pedestal[1][2] + .15)
     run.validate_motion = validate
     STAGE_NAMES.update(OBSERVE="抬高观察箱子", WAIT="返回观察位，等待下一箱")
     bridges, copied_frames = [], 0
@@ -145,11 +176,14 @@ def prepare_bridge(base_folder, output, feeder_xy, *, validate=True, observe_at_
         run.checking = validate
         base = run.ik.model.body_q.numpy()[run.ik.base_body]
         xy = (base[:3]+Rotation.from_quat(base[3:]).apply([*feeder_xy, 0]))[:2]
+        if feeder_world_xy is not None:
+            xy = np.asarray(feeder_world_xy, dtype=float)
         observation_z = float(base[2])
         plan["observation"] = dict(tool_contact_world_z_m=observation_z,
                                    feeder_world_xy_m=xy.tolist())
         with np.load(base_folder/"trajectory.npz") as data:
             for number, row in enumerate(plan["sequence"]):
+                run.current_box_size = row["input_dims_m"]
                 run.box_id, run.box_pose, run.attached = row["id"], None, False
                 indices = np.flatnonzero(data["box_id"] == row["id"])
                 start = int(indices[data["stage"][indices] == "CARRY"][0])
@@ -164,6 +198,10 @@ def prepare_bridge(base_folder, output, feeder_xy, *, validate=True, observe_at_
                 pickup = np.array([*xy, height/2])
                 contact = np.array([*xy, height])
                 hover = contact+[0, 0, .12]
+                # Lift in place before any lateral transfer. Keep the lowest
+                # payload corner >=15cm above the pedestal throughout connector.
+                high_contact = contact.copy()
+                high_contact[2] = run.high_carry_bottom_z + height + .005
                 observation = np.array([*xy, observation_z]) if observe_at_base else hover
                 previous_q = run.q.copy()
                 run.q = dock_q.copy()
@@ -199,8 +237,14 @@ def prepare_bridge(base_folder, output, feeder_xy, *, validate=True, observe_at_
                 run.enter("ATTACH")
                 run.hold()
                 run.enter("LIFT")
-                run.move(hover, yaw)
+                staging_xy = outside_staging_xy(xy, run.pedestal, run.current_box_size)
+                outer_lift_z = max(float(hover[2]), min(observation_z, float(high_contact[2])))
+                run.move([*xy, outer_lift_z], yaw)
+                run.move([*staging_xy, outer_lift_z], yaw)
+                run.move([*staging_xy, high_contact[2]], yaw)
+                run.high_carry = True
                 connector = run.joint_path(run.q.copy(), dock_q, "CARRY")
+                run.high_carry = False
                 if validate and np.linalg.norm(run.box_pose[:3]-dock_box[:3]) > .006:
                     raise RuntimeError("connector does not match original feeder")
                 first_output_frame = len(run.history)
@@ -232,7 +276,7 @@ def prepare_bridge(base_folder, output, feeder_xy, *, validate=True, observe_at_
     finally:
         run.close()
     if not validate:
-        write_json(output/"MOTION_READY.json", dict(boxes=len(bridges), feeder_base_xy_m=list(feeder_xy),
+        write_json(output/"MOTION_READY.json", dict(boxes=len(bridges), feeder=dict(plan["feeder"]),
                    observation_world_z_m=observation_z, ground_world_z_m=0,
                    collision_validation="not_run", trajectory_audit="not_run"))
         return dict(boxes=len(bridges), motion_validation="not_run")

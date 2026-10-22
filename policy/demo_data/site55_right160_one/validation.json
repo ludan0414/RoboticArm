@@ -1,0 +1,33 @@
+{
+  "success": true,
+  "boxes": 1,
+  "frames": 737,
+  "max_grasp_drift_m": 2.2378765937231054e-16,
+  "scene_recording": {
+    "success": true,
+    "boxes": 1,
+    "frames": 737,
+    "spawn_order": [
+      "B1"
+    ],
+    "final_poses": [
+      {
+        "id": "B1",
+        "position_error_m": 1.2030911648781672e-06,
+        "orientation_error_rad": 0.0,
+        "spawn_position_world_m": [
+          5.799406153528253e-06,
+          1.600000023841858,
+          0.10000000149011612
+        ],
+        "spawn_frame": 1,
+        "release_frame": 440
+      }
+    ]
+  },
+  "collision_check_provenance": {
+    "source": "D:\\Programming\\RoboticArm\\docs\\status\\evidence\\2026-10-22_base_right160\\attempt03_outside_retract",
+    "completed_box": "B1",
+    "method": "reuse completed checked source frames; reconstruct FK only"
+  }
+}

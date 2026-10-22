@@ -8,6 +8,20 @@ from demo_contract import (check_bundle, freeze_bundle, generate_boxes, write_js
 
 
 class DemoContractTests(unittest.TestCase):
+    def test_partial_replay_requires_explicit_opt_in_and_valid_subset(self):
+        with tempfile.TemporaryDirectory() as temp:
+            folder=Path(temp)
+            self.fixture(folder)
+            write_json(folder/'plan.json',dict(sequence=[dict(input_index=0)]))
+            freeze_bundle(folder)
+            with self.assertRaises(ValueError):
+                check_bundle(folder)
+            self.assertEqual(len(check_bundle(folder,allow_partial=True)['sequence']),1)
+            write_json(folder/'plan.json',dict(sequence=[dict(input_index=0),dict(input_index=0)]))
+            freeze_bundle(folder)
+            with self.assertRaises(ValueError):
+                check_bundle(folder,allow_partial=True)
+
     def test_supported_heights_use_actual_boxes_and_bounded_counts(self):
         heights = stack_contact_heights([[.55, .36, .24], [.63, .37, .28]], 1.3)
         self.assertEqual(heights, [.24, .28, .52])

@@ -11,6 +11,7 @@ from pathlib import Path
 import numpy as np
 import yaml
 from scipy.spatial.transform import Rotation
+from demo_contract import check_bundle
 
 
 def pose_dict(pose):
@@ -44,10 +45,13 @@ def sample_poses(poses):
 
 def export_profile(bundle):
     bundle = Path(bundle)
+    check_bundle(bundle, allow_partial=True)
     plan_path, trace_path = bundle / "plan.json", bundle / "trajectory.npz"
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
-    if plan["feeder"]["xy_m"] != [-1.2, 0.0]:
-        raise ValueError("expected the approved base-frame -1.2m right-hand feeder")
+    if plan["feeder"]["frame"] != "elfin_base" or plan["feeder"]["xy_m"] != [-1.6, 0.0]:
+        raise ValueError("expected the reviewed base-frame -1.6m right-hand feeder")
+    if plan.get("ground_carry_clearance", {}).get("pedestal_margin_m") != .05:
+        raise ValueError("reviewed high-clearance route required")
     scene = yaml.safe_load((bundle / "scene_tf.yaml").read_text(encoding="utf-8"))
     pedestal = scene["pedestal"]
     base_rotation = (Rotation.from_euler("xyz", pedestal["rotation_rpy"])
@@ -89,7 +93,7 @@ def export_profile(bundle):
                     calibration_source="user_provided_scene_tf_yaml",
                     source_bundle="policy/demo_data/" + bundle.name,
                     source_sha256=hashes,
-                    feeder_frame="elfin_base_link", feeder_xy_m=[-1.2, 0.0],
+                    feeder_frame="elfin_base_link", feeder_xy_m=[-1.6, 0.0],
                     ground_world_z_m=0.0,
                     base_world_translation_m=base_position.tolist(),
                     base_world_yaw_rad=float(base_rotation.as_euler("xyz")[2]),
@@ -99,17 +103,24 @@ def export_profile(bundle):
                     expected_base_world_pose=pose_dict(np.r_[base_position, base_rotation.as_quat()]),
                     expected_container_world_pose=pose_dict(np.r_[container["translation"],
                         Rotation.from_euler("xyz", container["rotation_rpy"]).as_quat()]),
-                    feeder_base_xy_m=[-1.2, 0.0], ground_base_z_m=-float(base_position[2]),
+                    feeder_base_xy_m=[-1.6, 0.0], ground_base_z_m=-float(base_position[2]),
                     pickup_position_source="vision", max_segment_translation_m=.30,
                     max_segment_rotation_rad=float(np.pi / 3),
                     axis_test_step_m=.02),
+                carry_entry=dict(strategy="outside_retract_high_lift_v1",
+                    pedestal_center_world_pose=pose_dict(np.r_[
+                        np.asarray(pedestal["translation"]) + [0, 0, pedestal["size"][2]/2],
+                        Rotation.from_euler("z", pedestal["rotation_rpy"][2]).as_quat()]),
+                    pedestal_size_m=pedestal["size"], pedestal_margin_m=.05,
+                    high_bottom_above_pedestal_m=.15, outer_lift_tool_world_z_m=float(base_position[2]),
+                    staging_radius_m=1.25),
                 observe_tool_pose=observe, cycles=cycles)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bundle", type=Path,
-                        default=Path(__file__).parent / "demo_data/site55_ground_greedy10")
+                        default=Path(__file__).parent / "demo_data/site55_right160_one")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()

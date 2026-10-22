@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "policy": "greedy_back_to_front",
+  "seed": null,
+  "position_frame": "world",
+  "route_frame": "container_door_floor",
+  "sequence": [
+    {
+      "step": 1,
+      "input_index": 0,
+      "id": "B1",
+      "input_dims_m": [
+        0.55,
+        0.35,
+        0.2
+      ],
+      "placed_dims_m": [
+        0.35,
+        0.55,
+        0.2
+      ],
+      "spawn_position_world_m": [
+        5.799406209838765e-06,
+        1.5999999999894892,
+        0.1
+      ],
+      "center_container_door_floor_m": [
+        0.6,
+        0.28,
+        0.1
+      ],
+      "orientation": {
+        "yaw_deg": -90.0,
+        "quaternion_xyzw": [
+          0,
+          0,
+          -0.7071067811865476,
+          0.7071067811865476
+        ]
+      },
+      "position_world_m": [
+        -1.5010654071274143,
+        0.6600166683606922,
+        0.6291458602911657
+      ],
+      "orientation_world_xyzw": [
+        -0.01264444313836471,
+        -0.009551467007879346,
+        -0.710531765696781,
+        -0.7034866718506705
+      ],
+      "domain_certificate": 95,
+      "route": [
+        [
+          -0.52,
+          0.22499999999999998,
+          0.45000000000000007
+        ],
+        [
+          -0.4,
+          0.22499999999999998,
+          0.45000000000000007
+        ],
+        [
+          -0.4,
+          0.22499999999999998,
+          0.4
+        ],
+        [
+          -0.4,
+          0.057,
+          0.4
+        ],
+        [
+          0.425,
+          0.057,
+          0.4
+        ],
+        [
+          0.425,
+          0.005,
+          0.4
+        ],
+        [
+          0.425,
+          0.005,
+          0.0
+        ]
+      ],
+      "spawn_bottom_world_z_m": 0
+    }
+  ],
+  "feeder": {
+    "frame": "elfin_base",
+    "xy_m": [
+      -1.6,
+      0.0
+    ],
+    "bottom_world_z_m": 0
+  },
+  "ground_carry_clearance": {
+    "pedestal_margin_m": 0.05,
+    "connector_bottom_above_pedestal_m": 0.15,
+    "strategy": "outer_lift_retract_outside_pedestal_high_lift_checked_carry"
+  },
+  "observation": {
+    "tool_contact_world_z_m": 0.8600000143051147,
+    "feeder_world_xy_m": [
+      5.799406209838765e-06,
+      1.5999999999894892
+    ]
+  }
+}

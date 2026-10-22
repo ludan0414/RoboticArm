@@ -17,8 +17,13 @@
 复制 [默认配置](../config/loading_cycle.site.template.json) 到 `/ABS/site/loading_cycle.json`。
 坐标依据是用户提供的 `deployment_ws/config/scene_tf.loading_site.yaml`：
 底座 yaw `-90°`，面对航空箱时基座 `+X` 向左、`+Y` 向后、`+Z` 向上。
-右手边上料点为**基座 `(-1.2, 0)`**，对应 world 约 `(0, 1.2)`；箱底 world `z=0`。
-十箱全部 `55×35×20 cm`。观察位 world `z≈0.86`，与基座同高。
+名义右手边上料点为**基座 `(-1.6, 0)`**，对应 world 约 `(0, 1.6)`；箱底 world `z=0`。
+本次部署默认改为已查看的**单箱** `55×35×20 cm` 路线，源包为
+`policy/demo_data/site55_right160_one/`。观察位 world `z≈0.86`，与基座同高。
+上料点允许偏移，继续使用原视觉 Pick。成功后保持吸附，按实际抓取变换生成
+外侧抬起 → 在底座外侧收臂 → 抬至箱底高于底座顶面 15cm → 已审核的高位入舱路线。
+附加 5cm 底座箱体净空检查；实际箱体尺寸、抓取偏心和姿态都来自本次检测。
+单箱完成后归位并显示 COMPLETE，不自动重复同一放置目标，避免堆叠覆盖。
 航空箱的平移和完整 roll/pitch/yaw 均来自该 YAML，不能再使用此前底座 `+90°` 的配置。
 `assumptions` 保存来源和哈希，并不意味着执行过现场验收。
 O1 的 `orin_perception.sh` 和 L1 的 `hardware_pick.sh` 默认加载上述文件；
@@ -27,7 +32,7 @@ O1 的 `orin_perception.sh` 和 L1 的 `hardware_pick.sh` 默认加载上述文�
 
 - `observe_tool_pose`：工具 `suction_contact_frame` 在现场 `world` 中的等待/观察位，
   单位 m、姿态 xyzw。应能看见地面上料区，并让开人工上料空间。
-- `cycles`：按执行顺序每箱一项，默认使用 demo 的贪心十箱结果；启动时冻结整个列表，
+- `cycles`：按执行顺序每箱一项，当前默认只有已查看的一箱；启动时冻结整个列表，
   不在线计算或重读目标。若现场布局不同，先把位姿转换到实际 world。
   `expected_demo_input_dims_m` 仅记录 demo 箱子尺寸，不替代本轮视觉测量或身份校验。
 - `place_target`：箱子中心目标，遵循 [放置接口](policy_place.md)。
@@ -65,7 +70,10 @@ bash scripts/run_loading_console.sh \
   --journal /ABS/site/runs/loading_001.jsonl
 ```
 
-本次需要更新旧箱单：将新模板复制到实际使用的 profile 路径，重启 L2。
+本次必须更新旧路线：将新模板覆盖到实际使用的 profile 路径，重启 L2。
+只 `git pull` 不会更新仓库外已经复制的 `/ABS/site/loading_cycle.json`。
+确认 JSON 有 `carry_entry.strategy=outside_retract_high_lift_v1`、名义 feeder `[-1.6,0]`、
+`cycles` 只有一项。此前十箱 profile 不会自动换成新路线。
 同时重启 O1、L1 加载新 YAML；只更新 L2 不能修正旧机器人 TF。
 需要重新从同一 demo 导出默认配置时，在仓库根目录用 Newton Python 执行：
 
@@ -104,7 +112,7 @@ python policy/export_hardware_loading_profile.py \
 动作超时请求取消，但取消请求不证明硬件已停。
 
 新 console 在初始化、方向测试和每段运动前校验实际 base/container TF 与 profile，
-拦截旧 `+90°` 底座或其他场景不一致。`(-1.2,0)` 仅为名义上料点，不要求精确摆放；
+拦截旧 `+90°` 底座或其他场景不一致。`(-1.6,0)` 仅为名义上料点，不要求精确摆放；
 不再使用旧 profile 的 20cm 半径或地面高度偏差拦截。实际箱位、候选抓取、可达性和吸附由原视觉 Pick 负责，
 原 Pick 的接近、吸附、抬起及失败反退不套用 console 的固定短段限制。
 成功 Pick 后保持吸附，从新鲜实测 TCP 接至首个 carry 目标；接驳分成不超过 15cm/20° 的段，

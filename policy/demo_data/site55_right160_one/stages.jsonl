@@ -1,0 +1,17 @@
+{"stage": "RESET_HOME", "label": "\u521d\u59cb\u5316\u673a\u68b0\u81c2\uff08\u4eff\u771f reset\uff09", "box_id": "B1", "attached": false, "elapsed_sec": 46.640999999995984}
+{"stage": "SPAWN", "label": "\u751f\u6210\u7bb1\u5b50", "box_id": "B1", "attached": false, "elapsed_sec": 48.25, "input_index": 0, "pose_world": [5.799406209838765e-06, 1.5999999999894892, 0.1, 0.0, 0.0, -0.7106460022636407, -0.7035497562125266]}
+{"stage": "OBSERVE", "label": "\u62ac\u9ad8\u89c2\u5bdf\u7bb1\u5b50", "box_id": "B1", "attached": false, "elapsed_sec": 51.078999999997905}
+{"stage": "APPROACH", "label": "\u63a5\u8fd1\u7bb1\u5b50", "box_id": "B1", "attached": false, "elapsed_sec": 56.687999999994645}
+{"stage": "PICK", "label": "\u6293\u53d6\u63a5\u89e6", "box_id": "B1", "attached": false, "elapsed_sec": 65.64099999999598}
+{"stage": "ATTACH", "label": "\u5438\u9644\uff08\u8fd0\u52a8\u5b66\u7ea6\u675f\uff09", "box_id": "B1", "attached": true, "elapsed_sec": 68.39099999999598}
+{"stage": "LIFT", "label": "\u62ac\u8d77", "box_id": "B1", "attached": true, "elapsed_sec": 70.28199999999924}
+{"stage": "CARRY", "label": "\u642c\u8fd0", "box_id": "B1", "attached": true, "elapsed_sec": 91.375}
+{"stage": "PLACE", "label": "\u4e0b\u964d\u653e\u7f6e", "box_id": "B1", "attached": true, "elapsed_sec": 109.40699999999924}
+{"stage": "RELEASE", "label": "\u91ca\u653e", "box_id": "B1", "attached": true, "elapsed_sec": 112.18799999999464}
+{"stage": "RETREAT", "label": "\u9000\u56de", "box_id": "B1", "attached": false, "elapsed_sec": 114.29699999999866}
+{"stage": "RETURN", "label": "\u7a7a\u624b\u8fd4\u56de\u4f9b\u6599\u4f4d", "box_id": "B1", "attached": false, "elapsed_sec": 117.04699999999866}
+{"stage": "RETURN", "label": "\u7a7a\u624b\u8fd4\u56de\u4f9b\u6599\u4f4d", "box_id": "B1", "attached": false, "elapsed_sec": 128.36000000000058}
+{"stage": "RETURN", "label": "\u7a7a\u624b\u8fd4\u56de\u4f9b\u6599\u4f4d", "box_id": "B1", "attached": false, "elapsed_sec": 141.75}
+{"stage": "VERIFY", "label": "\u68c0\u67e5\u843d\u4f4d", "box_id": "B1", "attached": false, "elapsed_sec": 145.15699999999924}
+{"stage": "VERIFY_RESULT", "box_id": "B1", "position_error_m": 1.2030911648781672e-06, "rotation_error_rad": 1.709704390814744e-06}
+{"stage": "COMPLETE", "box_id": "B1"}

@@ -9,6 +9,25 @@ from verify_pick_place_run import BOX_STAGES, verify
 
 
 class EvidenceTests(unittest.TestCase):
+    def test_ik_tolerance_change_does_not_reuse_wrong_cached_decision(self):
+        from newton_ik_planner import NewtonIKWorkspace
+        run = object.__new__(NewtonIKWorkspace)
+        run.cache = {}
+        run.q_last = run.q_default = np.zeros(6)
+        run.tool_orientation = lambda yaw: np.asarray([0, 0, 0, 1])
+        calls = []
+        def solve_once(*args):
+            calls.append(run.position_tolerance_m)
+            return .0041 <= run.position_tolerance_m, np.zeros(6)
+        run._solve_once = solve_once
+        run.position_tolerance_m = .003
+        self.assertFalse(run.solve_world_pose([0, 0, 1.2], 0)[0])
+        run.position_tolerance_m = .01
+        self.assertTrue(run.solve_world_pose([0, 0, 1.2], 0)[0])
+        run.position_tolerance_m = .003
+        self.assertFalse(run.solve_world_pose([0, 0, 1.2], 0)[0])
+        self.assertEqual(calls, [.003, .01])
+
     def test_rotation_trace_serializes_float32_fk_position(self):
         import io
         from types import SimpleNamespace

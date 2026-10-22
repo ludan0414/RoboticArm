@@ -1,5 +1,19 @@
 # Newton 集装箱粗仿真
 
+## 已查看并用于当前真机部署的单箱路线
+
+源包 `demo_data/site55_right160_one/`：基座右侧 `(-1.6,0)` 地面上料，
+先在底座外抬起/收臂，再保持箱底高于底座顶面至少 15cm 搬运，附加 5cm 底座净空检查。
+该包由已完成检查的一箱记录提取并重新检查抓持/落位/场景记录一致性；不是十箱通过声明。
+
+```powershell
+python replay_prepared_demo.py --bundle demo_data/site55_right160_one --allow-partial --manual-pick
+```
+
+默认真机 profile 现在从这个单箱包导出；成功后归位并 COMPLETE。
+真机重新规划工具/箱体位姿，不播放这份仿真关节数组，仿真检查也不等于真机轨迹已验证。
+下面保留的十箱包和入口仍可单独回放。
+
 ## 当前箱单：十个 55×35×20 cm 箱子
 
 按现场手头箱子的尺寸，当前已生成轨迹的输入为
@@ -67,6 +81,16 @@ PLACE → RELEASE → RETREAT → RETURN → WAIT`，最后一箱返回高观察
 10 个 55×35×20 cm 箱子的轨迹已生成在 `demo_data/site55_ground_greedy10/`，包含 `MOTION_READY.json`；
 启动直接回放，不再规划。若指定全新的 `--bundle`，首次会先生成完整十箱轨迹，再打开窗口。
 默认 30 fps，可加 `--fps 60`。`preview_ground_feeder.py` 也转到同一个完整十箱入口。
+新位置请指定新的 `--bundle`：默认会检查机械臂及携箱碰撞，接驳使用关节空间避障搜索；
+目标不可达或搜索失败时保留失败记录并停止，不生成可回放成功标记。
+例如基座右侧 1.6m：
+`python run_ground_greedy10_demo.py --feeder-x -1.6 --feeder-y 0 --bundle demo_data/right160_checked --validate`。
+若明确输入 world 坐标，使用 `--feeder-world X Y 0`（第三项为箱底高度，当前要求地面 0）。
+只有显式 `--preview` 才为新包跳过检查；已存在的旧预览包仍显示未验证标记。
+这些是当前模型和离散采样下的检查，不保证任意刷箱位置都有解，也不等价于真机 MoveIt 轨迹验证。
+新生成的地面接驳先在底座外侧抬起、必要时向内收臂，再抬至箱底高于底座顶面 15cm 后横移。
+携箱段要求箱体与膨胀 5cm 的底座不相交；跨底座接驳还限制箱体最低角点高度。
+搬运、观察返回等中间 IK 目标的位置容差为 1cm，接触点仍为 3mm，碰撞与净空条件独立保留。
 仓库保留两个可直接回放的数据包和随机输入 JSON；旧预览、未完成的连接实验和本地调试日志
 不随代码发布。录制文件按原字节保留；回放校验支持 checkout 路径和 Windows/Linux 换行差异。
 入舱和放置来源包 `demo_data/site55_greedy10/` 已完成十箱编译及其内置 IK/碰撞检查。

@@ -76,16 +76,28 @@ class CommissioningDriver(HardwarePickDriver):
         self.validate_scene_frame()
         return self.motion_guard.check_pickup(detection, None)
 
-    def prepare_place_segments(self, segments):
+    def prepare_place_segments(self, segments, detection=None, candidate=None):
         from luggage_planning.policy_place import connect_place_from_pose
         actual = self.lookup_pose("world", "suction_contact_frame", fresh=True)
+        config = getattr(self, "carry_entry_config", None)
+        if config is not None:
+            from luggage_planning.carry_entry import CarryEntry
+            if detection is None or candidate is None:
+                raise RuntimeError("measured successful grasp required for high carry entry")
+            self._carry_entry = CarryEntry(config, detection, candidate)
+            return self._carry_entry.connect(actual, segments)
         return connect_place_from_pose(actual, segments)
 
     def guard_segment(self, segment):
         self.validate_scene_frame()
-        return self.motion_guard.check_segment(
-            self.lookup_pose("world", "suction_contact_frame", fresh=True),
-            segment.target_pose, segment.name)
+        actual = self.lookup_pose("world", "suction_contact_frame", fresh=True)
+        ok, message = self.motion_guard.check_segment(actual, segment.target_pose, segment.name)
+        if not ok:
+            return ok, message
+        entry = getattr(self, "_carry_entry", None)
+        if entry is not None:
+            return entry.check_segment(actual, segment)
+        return ok, message
 
     def remove_scene_box(self):
         geometry = self._scene_box
@@ -207,6 +219,9 @@ def main(argv=None):
     raw_profile = Path(cli.site_profile).read_bytes()
     observe, cycles = parse_profile(json.loads(raw_profile))
     motion_guard = HardwareMotionGuard(json.loads(raw_profile))
+    from luggage_planning.carry_entry import CarryConfig
+    entry_settings = json.loads(raw_profile).get("carry_entry")
+    carry_config = CarryConfig(entry_settings) if entry_settings is not None else None
     # Fixed execution contract: commissioning cannot disable scene/vacuum or
     # accidentally invoke a preview/pick-only path through forwarded CLI flags.
     args = build_argument_parser().parse_args([])
@@ -220,6 +235,7 @@ def main(argv=None):
     driver.tf_buffer = Buffer()
     driver.tf_listener = TransformListener(driver.tf_buffer, driver)
     driver.motion_guard = motion_guard
+    driver.carry_entry_config = carry_config
     driver.segment_guard = driver.guard_segment
     driver.detection_guard = driver.guard_detection
     ports = HardwarePorts(driver, observe, cycles, journal, session)

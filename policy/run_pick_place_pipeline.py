@@ -62,7 +62,7 @@ class TracedIKWorkspace(NewtonIKWorkspace):
                 position_error_m=float(np.linalg.norm(actual[:3] - target_position)),
                 rotation_error_rad=self._quat_error(actual[3:], self.tool_orientation(yaw)
                     if orientation_xyzw is None else orientation_xyzw))
-            ok = (self.last_diagnostics["position_error_m"] <= 0.003
+            ok = (self.last_diagnostics["position_error_m"] <= self.position_tolerance_m
                   and self.last_diagnostics["rotation_error_rad"] <= 0.035)
             if not ok:
                 joints = None

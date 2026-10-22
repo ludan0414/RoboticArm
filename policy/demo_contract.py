@@ -99,7 +99,7 @@ def freeze_bundle(folder):
     return manifest
 
 
-def check_bundle(folder):
+def check_bundle(folder, *, allow_partial=False):
     folder = Path(folder)
     ready = json.loads((folder / "READY.json").read_text(encoding="utf-8"))
     if ready.get("ready") is not True:
@@ -109,9 +109,12 @@ def check_bundle(folder):
             raise ValueError("bundle integrity mismatch: " + name)
     plan = json.loads((folder / "plan.json").read_text(encoding="utf-8"))
     inputs = json.loads((folder / "input.json").read_text(encoding="utf-8"))
-    if len(plan["sequence"]) != len(inputs["boxes"]) or len(plan["sequence"]) != 10:
+    if not allow_partial and (len(plan["sequence"]) != len(inputs["boxes"]) or len(plan["sequence"]) != 10):
         raise ValueError("demo requires all 10 input boxes; partial plans are rejected")
     ids = [row["input_index"] for row in plan["sequence"]]
-    if sorted(ids) != list(range(10)):
+    if allow_partial:
+        if not ids or len(set(ids)) != len(ids) or any(i not in range(len(inputs['boxes'])) for i in ids):
+            raise ValueError("partial replay requires a nonempty unique subset of input boxes")
+    elif sorted(ids) != list(range(10)):
         raise ValueError("plan must contain each input box exactly once")
     return plan

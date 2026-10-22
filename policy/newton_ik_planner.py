@@ -56,6 +56,8 @@ def box_yaw(source_dims, dims) -> float:
 class NewtonIKWorkspace:
     """Reusable S20 IK solver bound to the active Newton loading scene."""
 
+    position_tolerance_m = IK_POSITION_TOLERANCE
+
     def __init__(
         self,
         source_root: Path,
@@ -190,7 +192,7 @@ class NewtonIKWorkspace:
                          np.all(solution[:6] <= limits_upper + 1e-4))
         collision_free = self._collision_free() if check_collision else True
         ok = (
-            position_error <= IK_POSITION_TOLERANCE
+            position_error <= self.position_tolerance_m
             and rotation_error <= IK_ROTATION_TOLERANCE
             and in_limits
             and collision_free
@@ -211,7 +213,8 @@ class NewtonIKWorkspace:
         target_position = np.asarray(target_position, dtype=np.float32)
         target_rotation = (self.tool_orientation(yaw) if orientation_xyzw is None else
                            np.asarray(orientation_xyzw, dtype=np.float32))
-        key = (bool(check_collision), *np.round(np.r_[target_position, target_rotation], 5))
+        key = (bool(check_collision), float(self.position_tolerance_m),
+               *np.round(np.r_[target_position, target_rotation], 5))
         if key in self.cache:
             return self.cache[key]
         seeds = [self.q_last]

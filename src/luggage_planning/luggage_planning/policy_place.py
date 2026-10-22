@@ -55,6 +55,18 @@ def parse_place_target(data):
     return PlaceTarget(_pose(data), clearance, via)
 
 
+def grasp_transform(detection, candidate):
+    """Measured T_box_tool shared by placement and the post-pick connector."""
+    if detection.frame != "world" or candidate.frame != "world" or not detection.yaw_valid:
+        raise ValueError("world-frame measured grasp and valid box yaw required")
+    pick_box_q = _quaternion(detection.box_quat)
+    attach = build_candidate_pick_segments(candidate, detection_yaw=detection.detection_yaw,
+                                            yaw_valid=detection.yaw_valid)[2].target_pose
+    offset = quat_rotate(quat_conjugate(pick_box_q), tuple(
+        a - b for a, b in zip((attach.position.x, attach.position.y, attach.position.z), detection.box_xyz)))
+    return offset, quat_mul(quat_conjugate(pick_box_q), attach.orientation)
+
+
 def build_place_segments(target, detection, candidate):
     """Preserve the selected grasp transform: T_world_tool = T_world_box T_box_tool.
 
@@ -65,15 +77,7 @@ def build_place_segments(target, detection, candidate):
         raise ValueError("pick observation and candidate must be in world")
     if not detection.yaw_valid:
         raise ValueError("policy box orientation requires a measured valid pick yaw")
-    pick_box_q = _quaternion(detection.box_quat)
-    attach = build_candidate_pick_segments(
-        candidate, detection_yaw=detection.detection_yaw,
-        yaw_valid=detection.yaw_valid)[2].target_pose
-    offset = quat_rotate(quat_conjugate(pick_box_q), tuple(
-        a - b for a, b in zip(
-            (attach.position.x, attach.position.y, attach.position.z),
-            detection.box_xyz)))
-    relative_q = quat_mul(quat_conjugate(pick_box_q), attach.orientation)
+    offset, relative_q = grasp_transform(detection, candidate)
 
     def tool_pose(box_pose, lift=0.0):
         rotated = quat_rotate(box_pose.orientation, offset)
@@ -99,7 +103,8 @@ def build_place_segments(target, detection, candidate):
     return segments
 
 
-def connect_place_from_pose(actual, segments):
+def connect_place_from_pose(actual, segments, max_translation_m=.15,
+                            max_rotation_rad=math.radians(20)):
     """Join measured successful Pick retreat to the first Cartesian carry pose.
 
     Only subdivides the first connection; downstream route and return targets
@@ -107,6 +112,8 @@ def connect_place_from_pose(actual, segments):
     Cartesian planning with the attached payload; there is no OMPL fallback.
     """
     segments = list(segments)
+    if not 0 < max_translation_m <= .15 or not 0 < max_rotation_rad <= math.radians(20):
+        raise ValueError("invalid connector sampling limits")
     if not segments or segments[0].type != "cartesian":
         return segments
     first = segments[0]
@@ -123,8 +130,8 @@ def connect_place_from_pose(actual, segments):
     if dot < 0:
         b, dot = tuple(-v for v in b), -dot
     angle = math.acos(min(1.0, dot))
-    count = max(1, math.ceil(math.dist(start, end) / .15),
-                math.ceil(2 * angle / math.radians(20)))
+    count = max(1, math.ceil(math.dist(start, end) / max_translation_m),
+                math.ceil(2 * angle / max_rotation_rad))
     connection = []
     for index in range(1, count):
         t = index / count

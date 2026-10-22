@@ -14,15 +14,16 @@ from roboticarm_newton import DEFAULT_SOURCE, make_robot_urdf, scene_paths
 
 
 def replay(folder, *, source_root=DEFAULT_SOURCE, headless=False, fps=30, device="cuda:0",
-           unvalidated_preview=False, manual_pick=False):
+           unvalidated_preview=False, manual_pick=False, allow_partial=False):
     if manual_pick and headless:
         raise ValueError("manual pick needs the visual window")
     folder, source_root = Path(folder), Path(source_root).resolve()
     plan = (json.loads((folder / "plan.json").read_text(encoding="utf-8"))
-            if unvalidated_preview else check_bundle(folder))
+            if unvalidated_preview else check_bundle(folder, allow_partial=allow_partial))
     if unvalidated_preview:
         print("UNVALIDATED SIMULATION PREVIEW: no feasibility certificate", flush=True)
     inputs = json.loads((folder / "input.json").read_text(encoding="utf-8"))
+    total_boxes = len(plan["sequence"])
     identity = json.loads((folder / "model_manifest.json").read_text(encoding="utf-8"))
     source, _, models = scene_paths(source_root)
     if recorded_urdf_digest(make_robot_urdf(source, models), source_root,
@@ -46,7 +47,7 @@ def replay(folder, *, source_root=DEFAULT_SOURCE, headless=False, fps=30, device
     model, _, container, _ = make_model(sample, source_root, folder / "scene_tf.yaml")
     state = model.state()
     from manual_pick_gate import ManualPickGate
-    gate = ManualPickGate(len(plan["sequence"])) if manual_pick else None
+    gate = ManualPickGate(total_boxes) if manual_pick else None
     viewer = None
     with np.load(folder / "trajectory.npz") as data:
         if list(data["body_labels"]) != list(model.body_label):
@@ -87,7 +88,7 @@ def replay(folder, *, source_root=DEFAULT_SOURCE, headless=False, fps=30, device
                         gate.on_stage(stage, box_id)
                     if stage == "SPAWN":
                         spawned.append(box_id)
-                    text = f"{len(spawned)}/10 | {box_id or '-'} | {stage}"
+                    text = f"{len(spawned)}/{total_boxes} | {box_id or '-'} | {stage}"
                     if gate and gate.waiting:
                         text += " | WAIT_PICK_BUTTON"
                     print("当前阶段: " + text, flush=True)
@@ -109,7 +110,7 @@ def replay(folder, *, source_root=DEFAULT_SOURCE, headless=False, fps=30, device
             if viewer:
                 if gate:
                     gate.on_stage("COMPLETE", "")
-                viewer.renderer.set_title(title_prefix + "10/10 | COMPLETE")
+                viewer.renderer.set_title(title_prefix + f"{total_boxes}/{total_boxes} | COMPLETE")
                 for _ in range(fps * 2):
                     if not viewer.is_running():
                         break
@@ -125,7 +126,7 @@ def replay(folder, *, source_root=DEFAULT_SOURCE, headless=False, fps=30, device
         expected = [row["id"] for row in plan["sequence"]]
         if spawned != expected:
             raise ValueError("recorded spawn order differs from frozen plan")
-        result = dict(success=True, stage="COMPLETE", spawned=spawned, boxes=10,
+        result = dict(success=True, stage="COMPLETE", spawned=spawned, boxes=total_boxes,
                       frames=frame, planning_calls=0, certified_domain_poses=domain["accepted"])
         if unvalidated_preview:
             result["motion_validation"] = "not_run"
@@ -141,7 +142,10 @@ if __name__ == "__main__":
     parser.add_argument("--headless", action="store_true")
     parser.add_argument("--fps", type=int, default=30)
     parser.add_argument("--device", default="cuda:0")
+    parser.add_argument("--allow-partial", action="store_true", help="explicitly replay a checked subset")
+    parser.add_argument("--manual-pick", action="store_true")
     args = parser.parse_args()
     if args.fps <= 0:
         parser.error("fps must be positive")
-    replay(args.bundle, headless=args.headless, fps=args.fps, device=args.device)
+    replay(args.bundle, headless=args.headless, fps=args.fps, device=args.device,
+           allow_partial=args.allow_partial, manual_pick=args.manual_pick)
