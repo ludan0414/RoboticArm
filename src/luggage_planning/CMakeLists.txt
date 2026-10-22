@@ -24,6 +24,7 @@ install(PROGRAMS
   scripts/vacuum_controller_node.py
   scripts/scene_manager_node.py
   scripts/hardware_pick_driver.py
+  scripts/hardware_loading_console.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

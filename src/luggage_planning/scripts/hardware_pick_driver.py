@@ -95,11 +95,12 @@ class RosPickSessionPorts:
         self._driver = driver
         self._di0_raw = None
         self._current_box = None
-        self._trace_file = open(log_path, "w") if log_path else None
-        node.create_subscription(
+        trace_mode = "x" if getattr(driver, "exclusive_trace", False) else "w"
+        self._trace_file = open(log_path, trace_mode) if log_path else None
+        self._di0_subscription = node.create_subscription(
             Bool, "/vacuum/di0", self._on_di0, 10,
             callback_group=driver._group)
-        node.create_subscription(
+        self._box_subscription = node.create_subscription(
             String, "/luggage/current_box", self._on_current_box,
             QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL,
                        reliability=ReliabilityPolicy.RELIABLE),
@@ -140,6 +141,7 @@ class RosPickSessionPorts:
                 "moveit_error_code": int(response.moveit_error_code)}
 
     def execute_segment(self, segment, candidate_id):
+        self._driver.report_stage(segment.name.upper())
         goal = PlanMotion.Goal()
         goal.segment = adapters.segment_to_msg(segment)
         ok, message, result = self._driver._send_action(
@@ -208,6 +210,8 @@ class RosPickSessionPorts:
         self._trace_file.flush()
 
     def close(self):
+        self._node.destroy_subscription(self._di0_subscription)
+        self._node.destroy_subscription(self._box_subscription)
         if self._trace_file is not None:
             self._trace_file.close()
             self._trace_file = None
@@ -220,6 +224,7 @@ class HardwarePickDriver(Node):
         self._args = args
         self._group = ReentrantCallbackGroup()
         self._vacuum_state = {}
+        self._vacuum_received_at = None
         self._scene_box = None
         self.create_subscription(
             VacuumState, "/vacuum/state", self._on_vacuum, 10,
@@ -243,6 +248,11 @@ class HardwarePickDriver(Node):
             callback_group=self._group)
         self._scene = None
         self._release_on_exit = False
+        self.stage_callback = None
+
+    def report_stage(self, stage):
+        if self.stage_callback is not None:
+            self.stage_callback(stage)
 
     def _scene_client(self):
         if self._scene is None:
@@ -256,6 +266,7 @@ class HardwarePickDriver(Node):
             "vacuum_on": bool(msg.vacuum_on),
             "fail_reason": msg.fail_reason,
         }
+        self._vacuum_received_at = time.monotonic()
 
     def _call_srv(self, client, request, timeout):
         if not client.wait_for_service(timeout_sec=min(5.0, timeout)):
@@ -282,6 +293,7 @@ class HardwarePickDriver(Node):
         result_fut = handle.get_result_async()
         result_fut.add_done_callback(lambda _f: event.set())
         if not event.wait(timeout):
+            handle.cancel_goal_async()
             return False, "%s result timeout" % name, None
         wrapped = result_fut.result()
         result = wrapped.result
@@ -517,6 +529,7 @@ class HardwarePickDriver(Node):
                    view.model_hash[:12]))
 
     def run(self):
+        self.report_stage("WAIT_GRAPH")
         self.get_logger().warn(
             "hardware pick: e-stop person required; vacuum uses box DO0/DO1")
         ready, ready_msg = self.wait_graph()
@@ -536,6 +549,7 @@ class HardwarePickDriver(Node):
                 return 2
             self.get_logger().info(
                 "at %s: %s" % (self._args.observe_pose, message))
+        self.report_stage("OBSERVE")
         time.sleep(self._args.settle_sec)
 
         if self._args.detect_only:
@@ -554,6 +568,7 @@ class HardwarePickDriver(Node):
                    box.width, box.depth, box.height))
             return 0
 
+        self.report_stage("DETECT")
         auth = self.detect_until_authorized()
         self.get_logger().info(
             "pick_authorization action=%s reason=%s attempts=%s"
@@ -670,7 +685,7 @@ class HardwarePickDriver(Node):
             self._release_on_exit = False
 
 
-def main(argv=None):
+def build_argument_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--observe-pose", default="current",
@@ -723,6 +738,11 @@ def main(argv=None):
         "--trace-out", default="",
         help="Write the session JSONL trace to this path (evidence).")
     parser.set_defaults(use_vacuum=True)
+    return parser
+
+
+def main(argv=None):
+    parser = build_argument_parser()
     args = parser.parse_args(args=argv)
     args.place_target_data = None
     if args.place_target:

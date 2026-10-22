@@ -3,7 +3,9 @@
 当前 Orin（Humble 感知）＋笔记本（Jazzy 规划/执行）的逐窗口启动、人工上箱确认、
 单箱 pick/place 和返回等待位的流程，见专门的
 **[真机操作文档](docs/real_robot_runbook.md)**。
-其中明确区分已接通的单箱入口和待接入的人工确认/自动退舱返回循环。
+现已增加 [真机按钮操作台](docs/loading_console.md)：逐箱点击 Pick，自动 place、
+退舱、归位；默认配置按真机与仿真布局一致导出，上料基座坐标 `(1.2, 0)`，
+属于尚待真机验收的调试入口。
 下文保留早期单机与底层检查说明；当前双机操作优先从上述文档开始。
 
 **实机代码 (site / real-cell).** This tree is not part of the Gazebo

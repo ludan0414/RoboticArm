@@ -5,6 +5,27 @@ same state machine and exploration contracts apply in simulation and on
 hardware. Adapters may differ by backend; authorization, state progression, and
 online map inputs may not.
 
+## Explicit site commissioning profile
+
+`hardware_loading_console.py` is a separate `site_commissioning_v1` adapter for
+operator-supervised commissioning of the existing single-box driver. It is not
+the production orchestrator and must say so in its UI and documentation. It
+does not report reset/exploration, live packing, commit, or verification success.
+Startup is inert; explicit initialization authorizes a MoveIt move to the
+measured observation TCP pose. Each correlated operator confirmation authorizes
+one detect/pick/place/release/exit/return cycle and also confirms the reviewed
+scene and previous placement. Only settled return re-enables confirmation.
+Any failure latches; no automatic retry, target reuse, or vacuum cleanup.
+
+Its frozen site target list is planning intent. Released payload dimensions
+come from pickup perception; their target-position collision proxies are
+explicitly expected placements, retained for collision checking only, never
+published as measured cargo occupancy or a successful placement verification.
+The operator must stop on a mismatch and correct the scene before proceeding.
+This profile does not relax the production cycle below or qualify as production
+acceptance. A future production adapter must use measured exploration and
+commit/verification and the production reducer.
+
 ## Startup Boundary
 
 `WAIT_START` is the initial state. Launch completion, lifecycle activation,

@@ -1,0 +1,109 @@
+"""Site commissioning cycle, independent of ROS and HTTP.
+
+This is not the production cargo-map orchestrator. Each operator confirmation
+also confirms the reviewed scene and previous placement. No automatic retry,
+fault reset, target reuse, or motion on construction is allowed.
+"""
+import threading
+import uuid
+
+from luggage_planning.policy_place import _pose, parse_place_target
+from luggage_planning.pose import MotionSegment
+
+
+def parse_profile(data):
+    if (data.get("profile") != "site_commissioning_v1"
+            or data.get("frame_id") != "world"
+            or data.get("tool_frame") != "suction_contact_frame"):
+        raise ValueError("requires site_commissioning_v1, world, suction_contact_frame")
+    observe = _pose(data["observe_tool_pose"])
+    entries = data["cycles"]
+    if not isinstance(entries, list) or not entries:
+        raise ValueError("cycles must be a nonempty list")
+    cycles = []
+    for entry in entries:
+        target = parse_place_target(entry["place_target"])
+        route = entry["exit_tool_poses"]
+        if not isinstance(route, list) or not route:
+            raise ValueError("each cycle needs explicit exit_tool_poses")
+        segments = [MotionSegment(
+            name="exit_%d" % i, type="cartesian", target_pose=_pose(p),
+            required_cartesian_fraction=1.0, allow_ompl_fallback=False)
+            for i, p in enumerate(route)]
+        segments.append(MotionSegment(name="return_observe", type="pose_target",
+                                      target_pose=observe))
+        cycles.append((target, tuple(segments)))
+    return observe, tuple(cycles)
+
+
+class LoadingCycle:
+    """Single worker; reserve one request atomically before starting effects.
+
+    ports: prepare(), pick_place(index), return_observe(index), record(event).
+    Methods raise on failure. The adapter must only return after settled motion.
+    A failed or interrupted session requires explicit on-site recovery.
+    """
+    def __init__(self, ports, count):
+        self.ports, self.count = ports, count
+        self.lock = threading.RLock()
+        self.state, self.stage, self.error = "WAIT_START", "WAIT_START", ""
+        self.index = 0
+        self.request_id = uuid.uuid4().hex
+        self.worker = None
+
+    def snapshot(self):
+        with self.lock:
+            return dict(state=self.state, stage=self.stage, error=self.error,
+                        next_box=self.index + 1 if self.index < self.count else None,
+                        completed=self.index, total=self.count,
+                        request_id=self.request_id, schema_version=1)
+
+    def stage_changed(self, stage):
+        with self.lock:
+            self.ports.record(dict(event="stage", stage=stage, index=self.index))
+            self.stage = stage
+
+    def submit(self, command, request_id, schema_version, scene_confirmed):
+        with self.lock:
+            expected = "initialize" if self.state == "WAIT_START" else "pick"
+            if (self.state not in ("WAIT_START", "WAIT_PICKUP_READY")
+                    or command != expected or request_id != self.request_id
+                    or type(schema_version) is not int or schema_version != 1
+                    or scene_confirmed is not True):
+                return False
+            # Persist acceptance BEFORE authorizing effects. A journal failure
+            # consumes no request and starts no worker.
+            self.ports.record(dict(event="accepted", command=command,
+                                   request_id=request_id, index=self.index))
+            self.state = "BUSY"
+            self.stage = "INITIALIZING" if command == "initialize" else "OBSERVE"
+            self.request_id = ""
+            self.worker = threading.Thread(target=self._run, args=(command,), daemon=True)
+            self.worker.start()
+            return True
+
+    def _run(self, command):
+        try:
+            if command == "initialize":
+                self.ports.prepare()
+            else:
+                self.ports.pick_place(self.index)
+                self.stage_changed("EXIT_AND_RETURN")
+                self.ports.return_observe(self.index)
+            with self.lock:
+                self.ports.record(dict(event="completed", command=command,
+                                       index=self.index))
+                if command == "pick":
+                    self.index += 1
+                self.state = ("COMPLETE" if self.index == self.count
+                              else "WAIT_PICKUP_READY")
+                self.stage = self.state
+                self.request_id = uuid.uuid4().hex if self.state != "COMPLETE" else ""
+        except Exception as exc:
+            with self.lock:
+                self.state, self.stage, self.error = "FAULT", "FAULT", str(exc)
+                self.request_id = ""
+                try:
+                    self.ports.record(dict(event="fault", index=self.index, error=str(exc)))
+                except Exception:
+                    pass  # Remain blocked even if evidence storage also failed.
