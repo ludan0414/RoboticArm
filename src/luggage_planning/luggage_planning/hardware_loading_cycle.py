@@ -39,7 +39,7 @@ def parse_profile(data):
 class LoadingCycle:
     """Single worker; reserve one request atomically before starting effects.
 
-    ports: prepare(), pick_place(index), return_observe(index), record(event).
+    ports: prepare(), prepare_current(), pick_place(index), return_observe(index), record(event).
     Methods raise on failure. The adapter must only return after settled motion.
     A failed or interrupted session requires explicit on-site recovery.
     """
@@ -50,12 +50,14 @@ class LoadingCycle:
         self.index = 0
         self.request_id = uuid.uuid4().hex
         self.worker = None
+        self.axis_test_completed = False
 
     def snapshot(self):
         with self.lock:
             return dict(state=self.state, stage=self.stage, error=self.error,
                         next_box=self.index + 1 if self.index < self.count else None,
                         completed=self.index, total=self.count,
+                        axis_test_motion_completed=self.axis_test_completed,
                         request_id=self.request_id, schema_version=1)
 
     def stage_changed(self, stage):
@@ -65,9 +67,10 @@ class LoadingCycle:
 
     def submit(self, command, request_id, schema_version, scene_confirmed):
         with self.lock:
-            expected = "initialize" if self.state == "WAIT_START" else "pick"
+            expected = (("initialize", "skip_initialize", "axis_test") if self.state == "WAIT_START"
+                        else ("pick", "axis_test"))
             if (self.state not in ("WAIT_START", "WAIT_PICKUP_READY")
-                    or command != expected or request_id != self.request_id
+                    or command not in expected or request_id != self.request_id
                     or type(schema_version) is not int or schema_version != 1
                     or scene_confirmed is not True):
                 return False
@@ -75,17 +78,23 @@ class LoadingCycle:
             # consumes no request and starts no worker.
             self.ports.record(dict(event="accepted", command=command,
                                    request_id=request_id, index=self.index))
+            previous_state = self.state
             self.state = "BUSY"
-            self.stage = "INITIALIZING" if command == "initialize" else "OBSERVE"
+            self.stage = {"initialize": "INITIALIZING", "skip_initialize": "CHECK_CURRENT",
+                          "pick": "OBSERVE", "axis_test": "AXIS_TEST"}[command]
             self.request_id = ""
-            self.worker = threading.Thread(target=self._run, args=(command,), daemon=True)
+            self.worker = threading.Thread(target=self._run, args=(command, previous_state), daemon=True)
             self.worker.start()
             return True
 
-    def _run(self, command):
+    def _run(self, command, previous_state):
         try:
             if command == "initialize":
                 self.ports.prepare()
+            elif command == "skip_initialize":
+                self.ports.prepare_current()
+            elif command == "axis_test":
+                self.ports.axis_test()
             else:
                 self.ports.pick_place(self.index)
                 self.stage_changed("EXIT_AND_RETURN")
@@ -95,9 +104,14 @@ class LoadingCycle:
                                        index=self.index))
                 if command == "pick":
                     self.index += 1
-                self.state = ("COMPLETE" if self.index == self.count
-                              else "WAIT_PICKUP_READY")
-                self.stage = self.state
+                if command == "axis_test":
+                    self.axis_test_completed = True
+                    self.state = previous_state
+                    self.stage = "AXIS_TEST_COMPLETE_CHECK_DIRECTIONS"
+                else:
+                    self.state = ("COMPLETE" if self.index == self.count
+                                  else "WAIT_PICKUP_READY")
+                    self.stage = self.state
                 self.request_id = uuid.uuid4().hex if self.state != "COMPLETE" else ""
         except Exception as exc:
             with self.lock:

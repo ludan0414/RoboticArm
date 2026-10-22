@@ -28,6 +28,7 @@ from online_packing_real import Hull
 from packing_policy import _load_manifest, _make_policy, plan
 from run_packing_visual import make_sample, parse_inline
 from joint_approach_path import nearest_revolute_solution, plan_joint_approach
+from scene_frames import container_pose, rotation
 
 
 STAGE_NAMES = {
@@ -47,10 +48,10 @@ class TracedIKWorkspace(NewtonIKWorkspace):
         self.trace = trace
         super().__init__(*args, **kwargs)
 
-    def solve_world_pose(self, target_position, yaw, *, check_collision=True):
+    def solve_world_pose(self, target_position, yaw, *, check_collision=True, orientation_xyzw=None):
         seed = self.q_last.copy()
         ok, joints = super().solve_world_pose(target_position, yaw,
-                                              check_collision=check_collision)
+            check_collision=check_collision, orientation_xyzw=orientation_xyzw)
         if ok:
             # Legacy cache rounds targets to millimetres. Re-measure cached
             # solutions against this exact request before accepting a path.
@@ -59,7 +60,8 @@ class TracedIKWorkspace(NewtonIKWorkspace):
             actual = self.model.body_q.numpy()[self.contact_body]
             self.last_diagnostics = dict(self.last_diagnostics,
                 position_error_m=float(np.linalg.norm(actual[:3] - target_position)),
-                rotation_error_rad=self._quat_error(actual[3:], tool_down_quaternion(yaw)))
+                rotation_error_rad=self._quat_error(actual[3:], self.tool_orientation(yaw)
+                    if orientation_xyzw is None else orientation_xyzw))
             ok = (self.last_diagnostics["position_error_m"] <= 0.003
                   and self.last_diagnostics["rotation_error_rad"] <= 0.035)
             if not ok:
@@ -82,7 +84,7 @@ class TracedIKWorkspace(NewtonIKWorkspace):
         # The legacy checker targets the box centre. This pipeline targets
         # the top contact; preserve the policy's box-centre output contract.
         world, world_yaw = super().local_contact_world(lower_left, dims, yaw, hull)
-        world[2] += float(dims[2]) / 2
+        world += rotation(container_pose(self.config)).apply([0, 0, float(dims[2]) / 2])
         return world, world_yaw
 
 
@@ -179,10 +181,13 @@ class Pipeline:
             self.viewer.log_lines("ground_grid", *self.grid)
             self.viewer.end_frame()
 
-    def solve(self, point, yaw):
-        ok, solution = self.ik.solve_world_pose(point, yaw)
+    def solve(self, point, yaw, orientation_xyzw=None):
+        if orientation_xyzw is None:
+            ok, solution = self.ik.solve_world_pose(point, yaw)
+        else:
+            ok, solution = self.ik.solve_world_pose(point, yaw, orientation_xyzw=orientation_xyzw)
         diagnostics = dict(self.ik.last_diagnostics)
-        self.trace.write(json.dumps(dict(stage=self.stage, target_world=list(point),
+        self.trace.write(json.dumps(dict(stage=self.stage, target_world=list(map(float, point)),
                                         yaw_rad=yaw, ok=ok, diagnostics=diagnostics)) + "\n")
         self.trace.flush()
         if not ok or solution is None:
@@ -244,7 +249,8 @@ class Pipeline:
             local_quat = np.asarray(row["orientation"]["quaternion_xyzw"])
             route = [world_pose(Pose(np.asarray(p) + dims / 2, local_quat),
                                 self.container, self.hull) for p in row["route"]]
-            contacts = [pose.center + [0, 0, float(dims[2]) / 2] for pose in route]
+            contacts = [pose.center + Rotation.from_quat(pose.quat).apply(
+                [0, 0, float(dims[2]) / 2]) for pose in route]
             yaw = float(self.container["rotation_rpy"][2]) + math.radians(row["orientation"]["yaw_deg"])
             if box_index == 0:
                 # Episode initial condition, before spawning any box. This is

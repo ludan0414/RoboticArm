@@ -20,6 +20,7 @@ from pathlib import Path
 import numpy as np
 import trimesh
 import yaml
+from scene_frames import rotation
 
 from container_demo import make_ground_grid  # configures Warp cache first
 
@@ -218,14 +219,16 @@ def add_cell_scene(builder, source_root: Path, *, show_robot: bool = True,
     sx, sy, sz = map(float, platform["translation"])
     ssize = tuple(map(float, platform["size"]))
     syaw = float(platform["rotation_rpy"][2])
-    add_static_box(builder, "pickup_platform", (sx, sy, sz + ssize[2] / 2), ssize, syaw, (0.35, 0.40, 0.45))
+    if platform.get("enabled", True):
+        add_static_box(builder, "pickup_platform", (sx, sy, sz + ssize[2] / 2), ssize, syaw, (0.35, 0.40, 0.45))
 
     container_model = config["gazebo"]["container_model"]
     container_dir = models / container_model / "meshes"
     container_pose = next(
         item for item in config["static_transforms"] if item["child"] == "container_link"
     )
-    c_xform = yaw_xform(container_pose["translation"], container_pose["rotation_rpy"][2])
+    c_xform = wp.transform(wp.vec3(*container_pose["translation"]),
+                           wp.quat(*rotation(container_pose).as_quat()))
     visual_cfg = builder.default_shape_cfg.copy()
     visual_cfg.density = 0.0
     visual_cfg.has_shape_collision = False

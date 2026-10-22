@@ -12,7 +12,11 @@ operator-supervised commissioning of the existing single-box driver. It is not
 the production orchestrator and must say so in its UI and documentation. It
 does not report reset/exploration, live packing, commit, or verification success.
 Startup is inert; explicit initialization authorizes a MoveIt move to the
-measured observation TCP pose. Each correlated operator confirmation authorizes
+configured observation TCP pose. Alternatively an explicit correlated
+`skip_initialize` checks readiness and an empty tool without motion, detection,
+or vacuum commands and waits for a separate pickup confirmation at the current
+pose. It does not assert that the configured observe pose was reached; later
+cycles still return to that configured pose. Each pickup confirmation authorizes
 one detect/pick/place/release/exit/return cycle and also confirms the reviewed
 scene and previous placement. Only settled return re-enables confirmation.
 Any failure latches; no automatic retry, target reuse, or vacuum cleanup.

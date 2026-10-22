@@ -64,6 +64,31 @@ def load_box_input(path):
     return result
 
 
+def stack_contact_heights(boxes, maximum_m=1.3):
+    """Possible supported top heights, using each input box at most once.
+
+    Work in integer millimetres so 240/280/320 mm cases can rest on the
+    floor or actual stacks rather than floating above a legacy 50 mm grid.
+    """
+    reachable = {0}
+    maximum_mm = int(round(maximum_m * 1000))
+    for dims in boxes:
+        height_mm = int(round(float(dims[2]) * 1000))
+        if height_mm <= 0 or abs(height_mm / 1000 - dims[2]) > 1e-7:
+            raise ValueError("domain exploration requires positive millimetre heights")
+        reachable |= {height + height_mm for height in reachable
+                      if height + height_mm <= maximum_mm}
+    return [height / 1000 for height in sorted(reachable) if height]
+
+
+def domain_y_positions(boxes):
+    positions = [.28, .53, .78, 1.03, 1.28]
+    widest = max(min(box[:2]) for box in boxes)
+    if widest > .5:
+        positions.append(round(positions[0] + widest + .02, 3))
+    return sorted(set(positions))
+
+
 def freeze_bundle(folder):
     folder = Path(folder)
     names = ["input.json", "domain.json", "plan.json", "trajectory.npz", "scene_tf.yaml",

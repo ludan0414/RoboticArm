@@ -105,6 +105,7 @@ _has_nvidia_gpu() {
 launch_args=()
 has_semantic_device=false
 has_use_compressed=false
+has_scene_tf=false
 for arg in "$@"; do
   if [[ "$arg" == "--" ]]; then
     continue
@@ -125,7 +126,14 @@ for arg in "$@"; do
   if [[ "$arg" == use_compressed:=* ]]; then
     has_use_compressed=true
   fi
+  if [[ "$arg" == scene_tf_config:=* ]]; then
+    has_scene_tf=true
+  fi
 done
+
+if [[ "$has_scene_tf" == false ]]; then
+  launch_args+=("scene_tf_config:=$DEPLOY/config/scene_tf.loading_site.yaml")
+fi
 
 if [[ "$has_use_compressed" == false ]]; then
   echo "detect path subscribes raw image_raw (use_compressed:=false)"

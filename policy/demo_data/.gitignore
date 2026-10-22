@@ -4,6 +4,8 @@
 !/inputs/
 !/greedy10/
 !/ground_greedy10_observe/
+!/site55_greedy10/
+!/site55_ground_greedy10/
 
 # Run-local diagnostics stay on disk, outside the published demo payload.
 **/boundary.jsonl

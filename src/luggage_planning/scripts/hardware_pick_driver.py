@@ -141,6 +141,10 @@ class RosPickSessionPorts:
                 "moveit_error_code": int(response.moveit_error_code)}
 
     def execute_segment(self, segment, candidate_id):
+        if self._driver.segment_guard is not None:
+            ok, message = self._driver.segment_guard(segment)
+            if not ok:
+                return SegmentOutcome(ok=False, message=message)
         self._driver.report_stage(segment.name.upper())
         goal = PlanMotion.Goal()
         goal.segment = adapters.segment_to_msg(segment)
@@ -249,6 +253,8 @@ class HardwarePickDriver(Node):
         self._scene = None
         self._release_on_exit = False
         self.stage_callback = None
+        self.segment_guard = None
+        self.detection_guard = None
 
     def report_stage(self, stage):
         if self.stage_callback is not None:
@@ -581,6 +587,11 @@ class HardwarePickDriver(Node):
             return 3
         box = auth.box
         detection = self._detection_view(box)
+        if self.detection_guard is not None:
+            ok, message = self.detection_guard(detection)
+            if not ok:
+                self.get_logger().error("MOTION_GUARD: %s" % message)
+                return 12
         self._log_detection(box, detection)
 
         # Validate the policy/grasp conversion before any pick motion. The

@@ -285,8 +285,10 @@ class MotionExecutor:
                  wrist_singularity_margin_rad=_WRIST_SINGULARITY_MARGIN_RAD,
                  tool_down_abs_tol=0.05,
                  velocity_scaling=_VEL_SCALE,
-                 acceleration_scaling=_ACC_SCALE):
+                 acceleration_scaling=_ACC_SCALE,
+                 max_segment_joint_excursion_rad=0.0):
         self._node = node
+        self._max_segment_joint_excursion_rad = float(max_segment_joint_excursion_rad)
         self._group = str(group_name)
         self._link = str(link_name)
         self._planner_id = str(planner_id)
@@ -899,14 +901,24 @@ class MotionExecutor:
             )
         return timed
 
+    def _guard_planned_trajectory(self, trajectory):
+        maximum = getattr(self, "_max_segment_joint_excursion_rad", 0.0)
+        if maximum <= 0:
+            return True, "joint excursion guard not configured"
+        from luggage_planning.hardware_motion_guard import planned_joint_excursion
+        return planned_joint_excursion(trajectory, maximum)
+
     def _execute_robot_trajectory(self, robot_traj, name, fraction,
                                   feedback_cb, execute_timeout):
-        self._notify(feedback_cb, "executing", name, fraction)
         if robot_traj is not None:
             self._retime_robot_trajectory(robot_traj)
             self._planned_traj = robot_traj
         goal = ExecuteTrajectory.Goal()
         goal.trajectory = robot_traj
+        ok, message = self._guard_planned_trajectory(goal.trajectory)
+        if not ok:
+            return self._result(False, message, fraction)
+        self._notify(feedback_cb, "executing", name, fraction)
         if not self._execute.wait_for_server(timeout_sec=5.0):
             return self._result(
                 False, "execute_trajectory server unavailable", fraction)
@@ -1062,12 +1074,15 @@ class MotionExecutor:
 
     def _execute_trajectory(self, plan_response, segment_msg, fraction,
                             feedback_cb, execute_timeout):
-        self._notify(feedback_cb, "executing", segment_msg.name, fraction)
         self._hold_pick_joint6(
             getattr(plan_response, "solution", None), segment_msg)
         goal = ExecuteTrajectory.Goal()
         goal.trajectory = self._retime_cartesian_solution(
             plan_response).solution
+        ok, message = self._guard_planned_trajectory(goal.trajectory)
+        if not ok:
+            return SegmentExecResult(False, message, fraction)
+        self._notify(feedback_cb, "executing", segment_msg.name, fraction)
         self._planned_traj = goal.trajectory
         if not self._execute.wait_for_server(timeout_sec=5.0):
             return SegmentExecResult(

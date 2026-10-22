@@ -48,6 +48,7 @@ class AdapterTests(unittest.TestCase):
         self.module = load_console()
         self.driver = SimpleNamespace(di0=0, healthy=True, motion_ok=True,
             _vacuum_received_at=time.monotonic(),
+            validate_scene_frame=lambda: None,
             _vacuum_state={"vacuum_on": False}, moves=[], closes=0,
             report_stage=lambda _stage: None)
         self.ports = self.module.HardwarePorts(self.driver, None, [], None, "test")
@@ -55,6 +56,13 @@ class AdapterTests(unittest.TestCase):
     def test_return_executes_all_segments_and_closes_subscription_ports(self):
         self.ports.execute([MotionSegment(name="exit"), MotionSegment(name="observe")])
         self.assertEqual(self.driver.moves, ["exit", "observe"])
+        self.assertEqual(self.driver.closes, 1)
+
+    def test_skip_initialization_checks_graph_scene_and_empty_tool_without_motion(self):
+        self.driver.wait_graph = lambda: (True, "ok")
+        self.driver._scene_client = lambda: SimpleNamespace(wait_ready=lambda **kw: True)
+        self.ports.prepare_current()
+        self.assertEqual(self.driver.moves, [])
         self.assertEqual(self.driver.closes, 1)
 
     def test_held_unknown_or_enabled_vacuum_never_starts_return(self):

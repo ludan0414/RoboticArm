@@ -14,6 +14,7 @@ from pathlib import Path
 import newton
 import numpy as np
 import warp as wp
+from scene_frames import container_pose, container_tool_orientation, transform_point
 from newton import ik
 
 from roboticarm_newton import add_cell_scene
@@ -202,10 +203,15 @@ class NewtonIKWorkspace:
         }
         return ok, solution
 
-    def solve_world_pose(self, target_position, yaw: float, *, check_collision=True) -> tuple[bool, np.ndarray | None]:
+    def tool_orientation(self, yaw):
+        return container_tool_orientation(self.config, yaw)
+
+    def solve_world_pose(self, target_position, yaw: float, *, check_collision=True,
+                         orientation_xyzw=None) -> tuple[bool, np.ndarray | None]:
         target_position = np.asarray(target_position, dtype=np.float32)
-        target_rotation = tool_down_quaternion(yaw)
-        key = (bool(check_collision), *np.round(np.r_[target_position, yaw], 3))
+        target_rotation = (self.tool_orientation(yaw) if orientation_xyzw is None else
+                           np.asarray(orientation_xyzw, dtype=np.float32))
+        key = (bool(check_collision), *np.round(np.r_[target_position, target_rotation], 5))
         if key in self.cache:
             return self.cache[key]
         seeds = [self.q_last]
@@ -236,11 +242,7 @@ class NewtonIKWorkspace:
              hull.floor_z + z + lz / 2.0],
             dtype=np.float32,
         )
-        c, s = math.cos(container_yaw), math.sin(container_yaw)
-        rotated = np.array([c * local[0] - s * local[1],
-                            s * local[0] + c * local[1],
-                            local[2]], dtype=np.float32)
-        world = np.asarray(container["translation"], dtype=np.float32) + rotated
+        world = transform_point(container, local).astype(np.float32)
         return world, container_yaw + float(yaw)
 
     def reachable_x_interval(self, dims, y, z, hull, radius=None):

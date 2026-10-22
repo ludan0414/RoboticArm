@@ -1,11 +1,14 @@
 """Greedy ordering and placement over an already explored finite domain."""
 import math
 import numpy as np
+from scipy.spatial.transform import Rotation
+from scene_frames import rotation, transform_point
 from online_packing_demo import Box, collides, fully_supported
 from demo_feeder import FEEDER_CENTER_M, feeder_route
 
 
-def greedy_sequence(boxes, hull, domain, workspace, progress=print):
+def greedy_sequence(boxes, hull, domain, workspace, progress=print,
+                    feeder_center=FEEDER_CENTER_M):
     remaining = list(range(len(boxes)))
     placed, sequence = [], []
     depth_frontier = float("inf")
@@ -33,7 +36,7 @@ def greedy_sequence(boxes, hull, domain, workspace, progress=print):
         selected = None
         for box, point, certificate, index in candidates:
             workspace.q_last = np.asarray(point["joint_q"], dtype=np.float32)
-            route = feeder_route(box, placed, hull, workspace, boxes[index])
+            route = feeder_route(box, placed, hull, workspace, boxes[index], feeder_center)
             if route is not None:
                 selected = box, point, certificate, route, index
                 break
@@ -45,24 +48,24 @@ def greedy_sequence(boxes, hull, domain, workspace, progress=print):
         remaining.remove(index)
         yaw = point["box_yaw_rad"]
         world_center = list(point["contact_world_m"])
-        world_center[2] -= float(box.dims[2]) / 2
+        container_tf = next(t for t in workspace.config["static_transforms"]
+                            if t["child"] == "container_link")
+        container_rot = rotation(container_tf)
+        world_center = (np.asarray(world_center) - container_rot.apply([0, 0, float(box.dims[2]) / 2])).tolist()
         container_yaw = next(t for t in workspace.config["static_transforms"]
                              if t["child"] == "container_link")["rotation_rpy"][2]
         center_local = [box.pos[k] + box.dims[k] / 2 for k in range(3)]
-        offset = np.asarray(FEEDER_CENTER_M) - center_local
-        c, s = math.cos(container_yaw), math.sin(container_yaw)
-        spawn_world = (np.asarray(world_center) + [c * offset[0] - s * offset[1],
-                       s * offset[0] + c * offset[1], offset[2]]).tolist()
+        spawn_world = (np.asarray(world_center) + container_rot.apply(
+            np.asarray(feeder_center) - center_local)).tolist()
         sequence.append(dict(step=len(sequence) + 1, input_index=index, id=box.id,
                              input_dims_m=source, placed_dims_m=list(box.dims),
-                             spawn_center_container_door_floor_m=list(FEEDER_CENTER_M),
+                             spawn_center_container_door_floor_m=list(feeder_center),
                              spawn_position_world_m=spawn_world,
                              center_container_door_floor_m=center_local,
                              orientation=dict(yaw_deg=math.degrees(yaw),
                                  quaternion_xyzw=[0, 0, math.sin(yaw / 2), math.cos(yaw / 2)]),
                              position_world_m=world_center,
-                             orientation_world_xyzw=[0, 0, math.sin((yaw + container_yaw) / 2),
-                                                     math.cos((yaw + container_yaw) / 2)],
+                             orientation_world_xyzw=(container_rot * Rotation.from_euler("z", yaw)).as_quat().tolist(),
                              domain_certificate=certificate, route=route))
         placed.append(box)
         progress(f"GREEDY_PLAN {len(sequence)}/10: {box.id} -> {world_center}, yaw={math.degrees(yaw):.0f}")

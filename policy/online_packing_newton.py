@@ -17,6 +17,7 @@ from pathlib import Path
 
 import numpy as np
 from scipy.spatial.transform import Rotation, Slerp
+from scene_frames import rotation
 
 from container_demo import make_ground_grid  # configures Warp and OpenGL first
 from online_packing_real import Hull, validate_sample
@@ -337,7 +338,7 @@ def make_model(sample: dict, source_root: Path, scene_config_path: Path,
 
 
 def world_pose(pose: Pose, container_pose: dict, hull: Hull) -> Pose:
-    yaw_rotation = Rotation.from_euler("z", float(container_pose["rotation_rpy"][2]))
+    yaw_rotation = rotation(container_pose)
     local_center = np.array([hull.door_x, hull.inner_y0, hull.floor_z]) + pose.center
     center = np.asarray(container_pose["translation"], dtype=float) + yaw_rotation.apply(local_center)
     quat = (yaw_rotation * Rotation.from_quat(pose.quat)).as_quat()

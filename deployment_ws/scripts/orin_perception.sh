@@ -115,4 +115,12 @@ fi
 echo "ROS_DOMAIN_ID=${ROS_DOMAIN_ID} ROBOTICARM_ROOT=${ROBOTICARM_ROOT}"
 echo "Orin perception launch. ThinkPad owns planning/CPS/scene TF."
 
-exec ros2 launch luggage_perception orin_perception.launch.py "$@"
+scene_args=()
+has_scene_tf=false
+for arg in "$@"; do
+  if [[ "$arg" == scene_tf_config:=* ]]; then has_scene_tf=true; fi
+done
+if [[ "$has_scene_tf" == false ]]; then
+  scene_args+=("scene_tf_config:=$DEPLOY/config/scene_tf.loading_site.yaml")
+fi
+exec ros2 launch luggage_perception orin_perception.launch.py "${scene_args[@]}" "$@"

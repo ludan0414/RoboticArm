@@ -108,6 +108,7 @@ class MotionPlannerNode(Node):
         self.declare_parameter("cartesian_excursion_rad_per_m", 3.0)
         self.declare_parameter("velocity_scaling", 0.3)
         self.declare_parameter("acceleration_scaling", 0.3)
+        self.declare_parameter("max_segment_joint_excursion_rad", 0.0)
         # Settle gate between segments.
         self.declare_parameter("settle_vel_tol", 0.02)
         self.declare_parameter("settle_hold_time", 0.5)
@@ -201,6 +202,8 @@ class MotionPlannerNode(Node):
                 self.get_parameter("velocity_scaling").value),
             acceleration_scaling=float(
                 self.get_parameter("acceleration_scaling").value),
+            max_segment_joint_excursion_rad=float(
+                self.get_parameter("max_segment_joint_excursion_rad").value),
             cartesian_min_fraction=float(
                 self.get_parameter("cartesian_min_fraction").value),
             cartesian_excursion_rad_per_m=float(

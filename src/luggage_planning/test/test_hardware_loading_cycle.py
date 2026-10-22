@@ -21,6 +21,12 @@ class Ports:
     def prepare(self):
         self.effect("prepare")
 
+    def prepare_current(self):
+        self.effect("check_current")
+
+    def axis_test(self):
+        self.effect("axis_test")
+
     def pick_place(self, index):
         self.effect("pick_place", index)
 
@@ -37,6 +43,44 @@ def submit(cycle, command):
 
 
 class LoadingCycleTest(unittest.TestCase):
+    def test_optional_axis_test_restores_wait_state_and_never_picks(self):
+        ports = Ports()
+        cycle = LoadingCycle(ports, 1)
+        self.assertTrue(submit(cycle, "axis_test"))
+        self.assertEqual(cycle.state, "WAIT_START")
+        self.assertTrue(cycle.axis_test_completed)
+        self.assertEqual(ports.calls, [("axis_test", None)])
+        self.assertTrue(submit(cycle, "skip_initialize"))
+        self.assertTrue(submit(cycle, "axis_test"))
+        self.assertEqual(cycle.state, "WAIT_PICKUP_READY")
+        self.assertEqual(cycle.index, 0)
+
+    def test_failed_axis_test_blocks_initialization_and_pick(self):
+        cycle = LoadingCycle(Ports("axis_test"), 1)
+        self.assertTrue(submit(cycle, "axis_test"))
+        self.assertEqual(cycle.state, "FAULT")
+        self.assertFalse(cycle.axis_test_completed)
+        self.assertFalse(submit(cycle, "skip_initialize"))
+        self.assertFalse(submit(cycle, "pick"))
+    def test_skip_initialization_checks_current_then_waits_for_separate_pick(self):
+        ports = Ports()
+        cycle = LoadingCycle(ports, 1)
+        old = cycle.request_id
+        self.assertTrue(submit(cycle, "skip_initialize"))
+        self.assertEqual(ports.calls, [("check_current", None)])
+        self.assertEqual(cycle.index, 0)
+        self.assertEqual(cycle.state, "WAIT_PICKUP_READY")
+        self.assertFalse(cycle.submit("pick", old, 1, True))
+        self.assertFalse(submit(cycle, "skip_initialize"))
+        self.assertTrue(submit(cycle, "pick"))
+        self.assertEqual(ports.calls[-2:], [("pick_place", 0), ("return", 0)])
+
+    def test_skip_initialization_readiness_failure_latches_fault(self):
+        cycle = LoadingCycle(Ports("check_current"), 1)
+        self.assertTrue(submit(cycle, "skip_initialize"))
+        self.assertEqual(cycle.state, "FAULT")
+        self.assertFalse(submit(cycle, "pick"))
+
     def test_startup_has_no_effects_and_pick_cannot_initialize(self):
         ports = Ports()
         cycle = LoadingCycle(ports, 2)

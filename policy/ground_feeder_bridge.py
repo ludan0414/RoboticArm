@@ -17,6 +17,7 @@ from joint_approach_path import plan_joint_approach, nearest_revolute_solution
 from run_pick_place_pipeline import Pipeline, STAGE_NAMES
 from online_packing_real import Hull
 from roboticarm_newton import DEFAULT_SOURCE
+from newton_ik_planner import tool_down_quaternion
 from verify_pick_place_run import verify
 
 
@@ -26,8 +27,9 @@ class BridgeCompiler(MotionCompiler):
 
     def solve(self, point, yaw):
         if self.validate_motion:
-            return super().solve(point, yaw)
-        ok, joints = self.ik.solve_world_pose(point, yaw, check_collision=False)
+            return super().solve(point, yaw, orientation_xyzw=tool_down_quaternion(yaw))
+        ok, joints = self.ik.solve_world_pose(point, yaw, check_collision=False,
+                                             orientation_xyzw=tool_down_quaternion(yaw))
         if not ok or joints is None:
             raise RuntimeError(f"Animation IK could not reach {self.stage}: {point}")
         joints = nearest_revolute_solution(joints, self.q,
@@ -158,8 +160,7 @@ def prepare_bridge(base_folder, output, feeder_xy, *, validate=True, observe_at_
                 run.grasp_xyz = inv.apply(dock_box[:3]-dock_tool[:3])
                 run.grasp_rotation = inv*Rotation.from_quat(dock_box[3:])
                 height = row["placed_dims_m"][2]
-                yaw = float(np.arctan2(2*row["orientation_world_xyzw"][2]*row["orientation_world_xyzw"][3],
-                                      1-2*row["orientation_world_xyzw"][2]**2))
+                yaw = float(run.container["rotation_rpy"][2]) + np.deg2rad(row["orientation"]["yaw_deg"])
                 pickup = np.array([*xy, height/2])
                 contact = np.array([*xy, height])
                 hover = contact+[0, 0, .12]
@@ -177,7 +178,7 @@ def prepare_bridge(base_folder, output, feeder_xy, *, validate=True, observe_at_
                 else:
                     run.q = previous_q
                     run.joint_path(previous_q, observation_q, "RETURN")
-                run.box_pose = np.r_[pickup, row["orientation_world_xyzw"]]
+                run.box_pose = np.r_[pickup, Rotation.from_euler("z", yaw).as_quat()]
                 row["spawn_position_world_m"] = pickup.tolist()
                 row["spawn_bottom_world_z_m"] = 0
                 row.pop("spawn_center_container_door_floor_m", None)

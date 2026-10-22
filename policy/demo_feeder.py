@@ -7,9 +7,9 @@ from online_packing_real import path_clear, route_to
 FEEDER_CENTER_M = (-.3, .5, .55)
 
 
-def feeder_route(box, placed, hull, workspace, source_dims):
+def feeder_route(box, placed, hull, workspace, source_dims, feeder_center=FEEDER_CENTER_M):
     dims = box.dims
-    start = tuple(FEEDER_CENTER_M[k] - dims[k] / 2 for k in range(3))
+    start = tuple(feeder_center[k] - dims[k] / 2 for k in range(3))
     if start[0] + dims[0] > -.05 + 1e-6:
         return None  # Keep the whole payload outside while aligning it.
     yaw = workspace.box_yaw(source_dims, dims)
@@ -18,11 +18,17 @@ def feeder_route(box, placed, hull, workspace, source_dims):
         if incoming is None:
             continue
         entry = incoming[0]
+        # Long cases extend back into link1 when the original fully-outside
+        # rail sweeps across the pedestal. Enter the open doorway corridor
+        # before lateral alignment; path_clear checks its aperture and hull.
+        # Keep the legacy rail for the original <=0.5m fixtures.
+        rail_x = max(entry[0], -.40) if max(source_dims[:2]) > .5 else entry[0]
         # Move away from the robot to the insertion rail before sweeping Y.
         # Sweeping beside the pedestal at the feeder's X can hit link1/link2
         # even though both endpoints and the cargo corridor are clear.
-        connectors = [start, (entry[0], start[1], start[2]),
-                      (entry[0], start[1], entry[2]), entry]
+        rail_entry = (rail_x, entry[1], entry[2])
+        connectors = [start, (rail_x, start[1], start[2]),
+                      (rail_x, start[1], entry[2]), rail_entry]
         route = []
         for point in connectors + incoming[1:]:
             if not route or not np.allclose(point, route[-1], atol=1e-8, rtol=0):

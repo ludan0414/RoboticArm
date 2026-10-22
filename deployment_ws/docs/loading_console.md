@@ -15,13 +15,14 @@
 ## 现场配置
 
 复制 [默认配置](../config/loading_cycle.site.template.json) 到 `/ABS/site/loading_cycle.json`。
-根据本次约定，默认值假设真机布局与当前 Newton demo 一致，已经填好十箱配置，没有 null：
-上料点是基座坐标 `(1.2, 0)`，对应 world 约 `(0, 1.2)`，箱底 world `z=0`；
-观察位 world `z≈0.86`，与基座同高。姿态、十箱放置目标和途经点来自当前 demo 记录。
-`assumptions` 保存来源和哈希，明确这是布局假设而非现场标定记录。
-本配置需与 `policy/demo_data/ground_greedy10_observe/scene_tf.yaml` 的 world/基座/航空箱布局一致。
-沿用该布局启动 O1、L1 时，把其 `scene_tf_config` 参数设为各机器仓库中的
-`/ABS/RoboticArm/policy/demo_data/ground_greedy10_observe/scene_tf.yaml`。
+坐标依据是用户提供的 `deployment_ws/config/scene_tf.loading_site.yaml`：
+底座 yaw `-90°`，面对航空箱时基座 `+X` 向左、`+Y` 向后、`+Z` 向上。
+右手边上料点为**基座 `(-1.2, 0)`**，对应 world 约 `(0, 1.2)`；箱底 world `z=0`。
+十箱全部 `55×35×20 cm`。观察位 world `z≈0.86`，与基座同高。
+航空箱的平移和完整 roll/pitch/yaw 均来自该 YAML，不能再使用此前底座 `+90°` 的配置。
+`assumptions` 保存来源和哈希，并不意味着执行过现场验收。
+O1 的 `orin_perception.sh` 和 L1 的 `hardware_pick.sh` 默认加载上述文件；
+如果显式传 `scene_tf_config`，两机都应指向各自仓库里的这个文件。
 它只导出位姿供真机重新规划，不直接回放仿真关节轨迹。
 
 - `observe_tool_pose`：工具 `suction_contact_frame` 在现场 `world` 中的等待/观察位，
@@ -36,7 +37,10 @@
   不允许部分执行或 OMPL 回退。最后自动经 MoveIt 回到 `observe_tool_pose`。
 
 上料坐标是人工放箱区域的约定；抓取仍使用本轮视觉检测，不按该坐标盲抓。
-初始化也通过 MoveIt 运动到等待位，不使用直接插值的命名关节姿态。
+初始化现在可选：点“初始化归位”才通过 MoveIt 运动到配置的观察位；
+也可以点“跳过初始化，从当前位置开始”，只检查后台、场景和空工具状态，
+不发送运动、检测或真空命令。跳过后仍需单独点击 Pick，第一箱从当前姿态观察/抓取；
+之后每箱完成的自动回程仍回到配置的观察位，不会省略。
 初次运行前需现场检查场景、工具、路径和可达性。初始化不会清空场景或已放箱子占位；
 重新开启会话前需核对留存场景与实际货舱。
 
@@ -61,7 +65,8 @@ bash scripts/run_loading_console.sh \
   --journal /ABS/site/runs/loading_001.jsonl
 ```
 
-`cp` 在首次配置时执行；已有自定义现场配置时保留它，不重复覆盖。
+本次需要更新旧箱单：将新模板复制到实际使用的 profile 路径，重启 L2。
+同时重启 O1、L1 加载新 YAML；只更新 L2 不能修正旧机器人 TF。
 需要重新从同一 demo 导出默认配置时，在仓库根目录用 Newton Python 执行：
 
 ```bash
@@ -76,7 +81,12 @@ python policy/export_hardware_loading_profile.py \
 在笔记本浏览器打开 `http://127.0.0.1:8765`：
 
 1. 启动为 WAIT_START，不触发检测、运动或吸盘操作。
-2. 检查现场、勾选确认并点“初始化”；归到实测观察位后进入 WAIT_PICKUP_READY。
+   可先勾选确认并点“坐标方向测试”：按基座 `+X/-X/+Y/-Y/+Z/-Z` 各走 2cm，
+   每个方向后返回点击时的工具位姿，保持姿态。全程空工具、吸盘关闭、完整 Cartesian 路径，
+   不做箱子检测或 Pick。每段验证到位后才继续；失败锁定，不盲目追加复位动作。
+   在 WAIT_PICKUP_READY 也能执行此可选测试。完成后仍需人工观察确认方向并单独授权 Pick。
+2. 检查现场并勾选确认，选择“初始化归位（可选）”或“跳过初始化，从当前位置开始”；
+   对应动作/检查成功后进入 WAIT_PICKUP_READY。
 3. 人工上箱、退出运动范围，检查并重新勾选，点“开始 Pick”。
 4. 执行中按钮禁用，显示 DETECT、PICK_ATTACH、PLACE_DESCEND、PLACE_RETREAT、
    EXIT_AND_RETURN、RETURN_OBSERVE 等阶段。
@@ -92,6 +102,12 @@ python policy/export_hardware_loading_profile.py \
 不自动下一箱、重试或在携箱故障时松吸；没有网页故障重置。
 释放未确认不接着退舱；空工具/真空关闭未确认不初始化或开始下一次 Pick。
 动作超时请求取消，但取消请求不证明硬件已停。
+
+新 console 在初始化、方向测试和每段运动前校验实际 base/container TF 与 profile，
+拦截旧 `+90°` 底座或其他场景不一致；检测箱中心必须在基座 `(-1.2,0)` 的 20cm 范围内并落在地面。
+普通段最大位移 30cm、工具转角 60°；原 Pick 允许横向误差不超过 12cm 的竖直下降，最多 80cm。
+工具 TF 必须为最近 2s 数据。规划器在执行前拒绝任何关节相对本段起点超过 45° 的计划，
+硬件 launch 的速度/加速度比例降至 15%/10%。这些限制不替代现场方向观察和实体急停。
 
 实体急停是停止手段；网页关闭、Ctrl-C 和 HTTP 均不是急停。
 中断执行中的控制台不会追加归位或松吸；需现场明确恢复，保留 journal、trace。

@@ -1,7 +1,8 @@
 import math
 from types import SimpleNamespace
 import unittest
-from demo_contract import generate_boxes
+from demo_contract import generate_boxes, stack_contact_heights, domain_y_positions
+from generate_suitcase_inputs import generate_identical_boxes
 from demo_greedy import greedy_sequence
 from demo_feeder import FEEDER_CENTER_M
 from online_packing_real import Hull
@@ -18,6 +19,24 @@ class Workspace:
 
 
 class GreedyTests(unittest.TestCase):
+    def test_fixed55_boxes_use_explicit_outside_staging_point(self):
+        hull = Hull(1.49, 1.97, 1.48, 1.535, .37, .057, 1.383, .067, 1.479, .53, -.745, -.985)
+        boxes = generate_identical_boxes([55, 35, 20])["boxes"]
+        poses = [dict(contact_local_m=[x, y, z], contact_world_m=[x, y, z],
+                      box_yaw_rad=yaw, joint_q=[0] * 6)
+                 for x in (.3, .45, .6) for y in domain_y_positions(boxes)
+                 for z in stack_contact_heights(boxes)
+                 for yaw in (0, -math.pi / 2)]
+        feeder = (-.345, .5, .55)
+        rows = greedy_sequence(boxes, hull, dict(poses=poses), Workspace(),
+                               progress=lambda _: None, feeder_center=feeder)
+        self.assertEqual(len(rows), 10)
+        self.assertEqual(sorted(row["input_index"] for row in rows), list(range(10)))
+        for row in rows:
+            lower = row["route"][0]
+            self.assertLessEqual(lower[0] + row["placed_dims_m"][0], -.05)
+            self.assertEqual(row["spawn_center_container_door_floor_m"], list(feeder))
+
     def test_ten_unique_inputs_have_certified_destinations(self):
         hull = Hull(1.49, 1.97, 1.48, 1.535, .37, .057, 1.383, .067, 1.479, .53, -.745, -.985)
         poses = [dict(contact_local_m=[x, y, z], contact_world_m=[x, y, z],

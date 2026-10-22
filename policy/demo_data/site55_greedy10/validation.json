@@ -1,0 +1,149 @@
+{
+  "success": true,
+  "boxes": 10,
+  "frames": 3881,
+  "max_grasp_drift_m": 2.275557241831647e-16,
+  "scene_recording": {
+    "success": true,
+    "boxes": 10,
+    "frames": 3881,
+    "spawn_order": [
+      "B1",
+      "B2",
+      "B3",
+      "B4",
+      "B5",
+      "B6",
+      "B7",
+      "B8",
+      "B9",
+      "B10"
+    ],
+    "final_poses": [
+      {
+        "id": "B1",
+        "position_error_m": 5.911012997690664e-07,
+        "orientation_error_rad": 0.0,
+        "spawn_position_world_m": [
+          -0.5402681231498718,
+          0.4476108253002167,
+          1.048284649848938
+        ],
+        "spawn_frame": 2,
+        "release_frame": 230
+      },
+      {
+        "id": "B2",
+        "position_error_m": 4.185723918618177e-08,
+        "orientation_error_rad": 0.0,
+        "spawn_position_world_m": [
+          -0.5402681231498718,
+          0.4476108253002167,
+          1.048284649848938
+        ],
+        "spawn_frame": 424,
+        "release_frame": 664
+      },
+      {
+        "id": "B3",
+        "position_error_m": 6.420088991416405e-07,
+        "orientation_error_rad": 0.0,
+        "spawn_position_world_m": [
+          -0.5402681231498718,
+          0.4476108253002167,
+          1.048284649848938
+        ],
+        "spawn_frame": 870,
+        "release_frame": 1085
+      },
+      {
+        "id": "B4",
+        "position_error_m": 7.658099504797951e-07,
+        "orientation_error_rad": 0.0004793966213573306,
+        "spawn_position_world_m": [
+          -0.5402681231498718,
+          0.4476108253002167,
+          1.048284649848938
+        ],
+        "spawn_frame": 1266,
+        "release_frame": 1493
+      },
+      {
+        "id": "B5",
+        "position_error_m": 2.1065246401146847e-07,
+        "orientation_error_rad": 0.0,
+        "spawn_position_world_m": [
+          -0.5402681231498718,
+          0.4476108253002167,
+          1.048284649848938
+        ],
+        "spawn_frame": 1686,
+        "release_frame": 1899
+      },
+      {
+        "id": "B6",
+        "position_error_m": 4.384434676566883e-07,
+        "orientation_error_rad": 0.00045609485186147387,
+        "spawn_position_world_m": [
+          -0.5402681231498718,
+          0.4476108253002167,
+          1.048284649848938
+        ],
+        "spawn_frame": 2079,
+        "release_frame": 2304
+      },
+      {
+        "id": "B7",
+        "position_error_m": 2.4178684169612664e-07,
+        "orientation_error_rad": 0.0,
+        "spawn_position_world_m": [
+          -0.5402681231498718,
+          0.4476108253002167,
+          1.048284649848938
+        ],
+        "spawn_frame": 2495,
+        "release_frame": 2720
+      },
+      {
+        "id": "B8",
+        "position_error_m": 1.9930617270328678e-07,
+        "orientation_error_rad": 0.0,
+        "spawn_position_world_m": [
+          -0.5402681231498718,
+          0.4476108253002167,
+          1.048284649848938
+        ],
+        "spawn_frame": 2911,
+        "release_frame": 3101
+      },
+      {
+        "id": "B9",
+        "position_error_m": 5.184429140529907e-07,
+        "orientation_error_rad": 0.0,
+        "spawn_position_world_m": [
+          -0.5402681231498718,
+          0.4476108253002167,
+          1.048284649848938
+        ],
+        "spawn_frame": 3257,
+        "release_frame": 3434
+      },
+      {
+        "id": "B10",
+        "position_error_m": 1.0518399590817257e-07,
+        "orientation_error_rad": 0.0,
+        "spawn_position_world_m": [
+          -0.5402681231498718,
+          0.4476108253002167,
+          1.048284649848938
+        ],
+        "spawn_frame": 3577,
+        "release_frame": 3752
+      }
+    ]
+  },
+  "payload_checked_frames": 3771,
+  "penetration_tolerance_m": 0.001,
+  "initial_reset_count": 1,
+  "online_planning_during_replay": false
+}

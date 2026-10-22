@@ -4,6 +4,7 @@ import argparse
 import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import math
 import os
 from pathlib import Path
 import secrets
@@ -18,24 +19,30 @@ from hardware_pick_driver import (
 )
 from luggage_planning.hardware_loading_cycle import LoadingCycle, parse_profile
 from luggage_planning.pose import MotionSegment
+from luggage_planning.hardware_motion_guard import (HardwareMotionGuard, axis_test_segments,
+                                                    quaternion_angle)
+from luggage_planning.pose import Point, Pose, Quaternion
 
 
 PAGE = """<!doctype html><meta charset="utf-8"><title>Hardware loading</title>
 <style>body{font:22px sans-serif;max-width:850px;margin:50px auto}button{font-size:24px;padding:18px}pre{white-space:pre-wrap}</style>
 <h1>真机逐箱操作台 · 现场调试模式</h1>
-<p>初始化归到配置的观察位；每次 Pick 自动抓取、放置、松吸、退舱、归位。</p>
+<p>初始化可选：归到配置的观察位，或跳过并从当前位置开始。每次 Pick 自动抓取、放置、松吸、退舱、归位。</p>
 <p>尚无自动扫舱、视觉放置验收或地图提交。占位仅供避障，并非实测货舱地图。</p>
 <label><input id="ack" type="checkbox">已检查场景、上一箱放置和上料区域，人员已离开运动范围</label>
-<p><button id="start" disabled>初始化</button> <button id="pick" disabled>开始 Pick</button></p>
+<p><button id="axes" disabled>坐标方向测试（可选，每次 2cm 并复位）</button></p>
+<p>测试顺序：+X、-X、+Y、-Y、+Z、-Z，每次都复位。请现场确认：+X 向左，+Y 向后，+Z 向上。完成动作不代表已自动验证物理方向。</p>
+<p><button id="start" disabled>初始化归位（可选）</button> <button id="skip" disabled>跳过初始化，从当前位置开始</button></p>
+<p><button id="pick" disabled>开始 Pick</button></p>
 <pre id="status"></pre><p id="error"></p>
 <p>故障后锁定，不自动松吸或重试。此网页不提供急停，请使用现场实体急停。</p>
 <script>
 let current=null, pending=false;
-const ack=document.getElementById('ack'), a=document.getElementById('start'), b=document.getElementById('pick');
-function enable(){a.disabled=pending||!ack.checked||current?.state!=='WAIT_START';b.disabled=pending||!ack.checked||current?.state!=='WAIT_PICKUP_READY';}
-async function refresh(){try{current=await(await fetch('/status')).json();document.getElementById('status').textContent=JSON.stringify(current,null,2);enable();}catch(e){a.disabled=b.disabled=true;}}
+const ack=document.getElementById('ack'), a=document.getElementById('start'), s=document.getElementById('skip'), b=document.getElementById('pick'), t=document.getElementById('axes');
+function enable(){a.disabled=s.disabled=pending||!ack.checked||current?.state!=='WAIT_START';b.disabled=pending||!ack.checked||current?.state!=='WAIT_PICKUP_READY';t.disabled=pending||!ack.checked||!['WAIT_START','WAIT_PICKUP_READY'].includes(current?.state);}
+async function refresh(){try{current=await(await fetch('/status')).json();document.getElementById('status').textContent=JSON.stringify(current,null,2);enable();}catch(e){a.disabled=s.disabled=b.disabled=t.disabled=true;}}
 async function send(command){pending=true;enable();try{const r=await fetch('/command',{method:'POST',headers:{'Content-Type':'application/json','X-Console-Token':'TOKEN'},body:JSON.stringify({command,request_id:current.request_id,schema_version:1,scene_confirmed:ack.checked})});if(!r.ok)throw Error(await r.text());ack.checked=false;document.getElementById('error').textContent='';}catch(e){document.getElementById('error').textContent=e.message;}finally{pending=false;await refresh();}}
-a.onclick=()=>send('initialize');b.onclick=()=>send('pick');ack.onchange=enable;setInterval(refresh,700);refresh();
+a.onclick=()=>send('initialize');s.onclick=()=>send('skip_initialize');b.onclick=()=>send('pick');t.onclick=()=>send('axis_test');ack.onchange=enable;setInterval(refresh,700);refresh();
 </script>"""
 
 
@@ -43,6 +50,37 @@ class CommissioningDriver(HardwarePickDriver):
     """Keep nominal placed-box collision proxies separate from cargo mapping."""
     release_touch_links = ("suction_panel", "suction_contact_frame")
     exclusive_trace = True
+
+    def lookup_pose(self, target, source, fresh=False):
+        from rclpy.time import Time
+        stamped = self.tf_buffer.lookup_transform(target, source, Time())
+        if fresh:
+            age = (self.get_clock().now().nanoseconds
+                   - Time.from_msg(stamped.header.stamp).nanoseconds) / 1e9
+            if not -.1 <= age <= 2.0:
+                raise RuntimeError("stale tool TF")
+        transform = stamped.transform
+        return Pose(Point(transform.translation.x, transform.translation.y, transform.translation.z),
+                    Quaternion(transform.rotation.x, transform.rotation.y,
+                               transform.rotation.z, transform.rotation.w))
+
+    def validate_scene_frame(self):
+        ok, message = self.motion_guard.check_base(self.lookup_pose("world", "elfin_base_link"))
+        if not ok:
+            raise RuntimeError(message)
+        ok, message = self.motion_guard.check_container(self.lookup_pose("world", "container_link"))
+        if not ok:
+            raise RuntimeError(message)
+
+    def guard_detection(self, detection):
+        self.validate_scene_frame()
+        return self.motion_guard.check_pickup(detection, self.lookup_pose("elfin_base_link", "world"))
+
+    def guard_segment(self, segment):
+        self.validate_scene_frame()
+        return self.motion_guard.check_segment(
+            self.lookup_pose("world", "suction_contact_frame", fresh=True),
+            segment.target_pose, segment.name)
 
     def remove_scene_box(self):
         geometry = self._scene_box
@@ -75,6 +113,22 @@ class HardwarePorts:
         self.journal.flush()
         os.fsync(self.journal.fileno())
 
+    def axis_test(self):
+        self.prepare_current()
+        origin = self.driver.lookup_pose("world", "suction_contact_frame", fresh=True)
+        base = self.driver.lookup_pose("world", "elfin_base_link")
+        for segment in axis_test_segments(origin, base):
+            self.execute([segment])
+            actual = self.driver.lookup_pose("world", "suction_contact_frame", fresh=True)
+            target = segment.target_pose
+            distance = math.dist((actual.position.x, actual.position.y, actual.position.z),
+                                 (target.position.x, target.position.y, target.position.z))
+            if distance > .005 or quaternion_angle(actual.orientation, target.orientation) > math.radians(2):
+                raise RuntimeError("AXIS_TEST_NOT_SETTLED: " + segment.name)
+            self.record(dict(event="axis_test_settled", segment=segment.name,
+                             target=vars(target.position), actual=vars(actual.position),
+                             error_m=distance))
+
     def execute(self, segments):
         ports = RosPickSessionPorts(self.driver, self.driver)
         try:
@@ -99,16 +153,23 @@ class HardwarePorts:
             raise RuntimeError("fresh empty tool / vacuum off not confirmed")
 
     def prepare(self):
-        ready, reason = self.driver.wait_graph()
-        if not ready:
-            raise RuntimeError(reason)
-        scene = self.driver._scene_client()
-        if not scene.wait_ready(timeout_sec=5.0):
-            raise RuntimeError("planning scene unavailable")
+        self.prepare_current()
         self.execute([MotionSegment(name="initialize_observe", type="pose_target",
                                     target_pose=self.observe)])
 
+    def prepare_current(self):
+        """Readiness checks only: no observe move, detection or vacuum command."""
+        ready, reason = self.driver.wait_graph()
+        if not ready:
+            raise RuntimeError(reason)
+        self.driver.validate_scene_frame()
+        scene = self.driver._scene_client()
+        if not scene.wait_ready(timeout_sec=5.0):
+            raise RuntimeError("planning scene unavailable")
+        self.execute([])
+
     def pick_place(self, index):
+        self.driver.validate_scene_frame()
         self.execute([])  # A held box or unknown vacuum state blocks a new pick.
         self.driver._args.place_target_data = self.cycles[index][0]
         self.driver.placed_proxy_id = "expected_placed_%s_%d" % (self.session, index)
@@ -140,6 +201,7 @@ def main(argv=None):
     fcntl.flock(cell_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     raw_profile = Path(cli.site_profile).read_bytes()
     observe, cycles = parse_profile(json.loads(raw_profile))
+    motion_guard = HardwareMotionGuard(json.loads(raw_profile))
     # Fixed execution contract: commissioning cannot disable scene/vacuum or
     # accidentally invoke a preview/pick-only path through forwarded CLI flags.
     args = build_argument_parser().parse_args([])
@@ -149,6 +211,12 @@ def main(argv=None):
     journal = open(cli.journal, "x", encoding="utf-8")
     rclpy.init()
     driver = CommissioningDriver(args)
+    from tf2_ros import Buffer, TransformListener
+    driver.tf_buffer = Buffer()
+    driver.tf_listener = TransformListener(driver.tf_buffer, driver)
+    driver.motion_guard = motion_guard
+    driver.segment_guard = driver.guard_segment
+    driver.detection_guard = driver.guard_detection
     ports = HardwarePorts(driver, observe, cycles, journal, session)
     ports.record(dict(event="session", profile_sha256=hashlib.sha256(raw_profile).hexdigest(),
                       profile=json.loads(raw_profile), session=session))

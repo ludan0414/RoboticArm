@@ -54,10 +54,11 @@ class CertifiedWorkspace(TracedIKWorkspace):
                                 and self.model.shape_label[static_shape] == "robot_pedestal")
                 self.allowed_shapes[a, b] = allowed
 
-    def solve_world_pose(self, target_position, yaw, *, check_collision=True):
+    def solve_world_pose(self, target_position, yaw, *, check_collision=True, orientation_xyzw=None):
         if not check_collision:
             raise ValueError("certified workspace never disables collision checking")
-        ok, q = super().solve_world_pose(target_position, yaw, check_collision=True)
+        ok, q = super().solve_world_pose(target_position, yaw, check_collision=True,
+                                         orientation_xyzw=orientation_xyzw)
         if ok:
             self.model.joint_q.assign(q)
             newton.eval_fk(self.model, self.model.joint_q, self.model.joint_qd, self.model)
@@ -94,31 +95,44 @@ class CertifiedWorkspace(TracedIKWorkspace):
         return not rejected
 
 
-def explore_domain(workspace, hull, output, *, progress=print):
+def explore_domain(workspace, hull, output, *, progress=print, top_heights=None,
+                   y_positions=None, prior=None):
     # Coordinates are top-contact centres, referenced to the door/floor.
     xs = [.20, .30, .45, .60]
-    ys = [.28, .53, .78, 1.03, 1.28]
-    heights = [round(.25 + i * .05, 2) for i in range(22)]
+    ys = list(y_positions) if y_positions is not None else [.28, .53, .78, 1.03, 1.28]
+    heights = (list(top_heights) if top_heights is not None else
+               [round(.25 + i * .05, 2) for i in range(22)])
     yaws = [0.0, -math.pi / 2]
-    points, rejected = [], []
+    points, rejected = list(prior["poses"]) if prior else [], []
+    previous = set()
+    if prior:
+        grid = prior["grid"]
+        if not (set(grid["x_m"]) <= set(xs) and set(grid["y_m"]) <= set(ys)
+                and set(grid["top_height_m"]) <= set(heights)
+                and set(grid["yaw_rad"]) <= set(yaws)):
+            raise ValueError("source domain grid is not a subset of requested grid")
+        previous = {(x, y, height, yaw) for x in grid["x_m"] for y in grid["y_m"]
+                    for height in grid["top_height_m"] for yaw in grid["yaw_rad"]}
     total = len(xs) * len(ys) * len(heights) * len(yaws)
     for yaw in yaws:
         for height in heights:
             for x in xs:
                 for y in ys:
+                    if (x, y, height, yaw) in previous:
+                        continue
                     # Zero dimensions make local_contact_world's result the
                     # exact top point (no box-half-height adapter offset).
                     position, world_yaw = workspace.local_contact_world((x, y, height), (0, 0, 0), yaw, hull)
                     ok, q = workspace.solve_world_pose(position, world_yaw)
                     record = dict(contact_local_m=[x, y, height], contact_world_m=position.tolist(),
-                                  box_yaw_rad=yaw, tool_orientation_xyzw=tool_down_quaternion(world_yaw).tolist())
+                                  box_yaw_rad=yaw, tool_orientation_xyzw=workspace.tool_orientation(world_yaw).tolist())
                     if ok:
                         record.update(joint_q=q.tolist(), diagnostics=dict(workspace.last_diagnostics))
                         points.append(record)
                     else:
                         rejected.append(dict(**record, diagnostics=dict(workspace.last_diagnostics),
                                              collisions=workspace.last_collision_pairs))
-                    tried = len(points) + len(rejected)
+                    tried = len(previous) + len(points) - (len(prior["poses"]) if prior else 0) + len(rejected)
                     if tried % 40 == 0:
                         progress(f"EXPLORE_DOMAIN {tried}/{total}, certified={len(points)}")
     domain = dict(schema_version=1, representation="finite_certified_poses",
@@ -130,6 +144,9 @@ def explore_domain(workspace, hull, output, *, progress=print):
                   srdf=str(workspace.srdf_path),
                   thresholds=dict(position_m=.003, orientation_rad=.035, penetration_m=.001),
                   tested=total, accepted=len(points), poses=points)
+    if prior:
+        domain["reused_rechecked_poses"] = len(prior["poses"])
+        domain["previously_explored_grid_points"] = len(previous)
     output.write_text(json.dumps(domain, indent=2), encoding="utf-8")
     output.with_name("domain_rejected.json").write_text(json.dumps(rejected), encoding="utf-8")
     return domain
@@ -147,7 +164,7 @@ def recheck_domain(workspace, hull, source, output, progress=print):
         newton.eval_fk(workspace.model, workspace.model.joint_q, workspace.model.joint_qd, workspace.model)
         actual = workspace.model.body_q.numpy()[workspace.contact_body]
         position_error = float(np.linalg.norm(actual[:3] - target))
-        angle_error = workspace._quat_error(actual[3:], tool_down_quaternion(yaw))
+        angle_error = workspace._quat_error(actual[3:], workspace.tool_orientation(yaw))
         limits = bool(np.all(q >= workspace.model.joint_limit_lower.numpy()[:6] - 1e-4)
                       and np.all(q <= workspace.model.joint_limit_upper.numpy()[:6] + 1e-4))
         clear = workspace._collision_free()

@@ -1,0 +1,222 @@
+{
+  "schema_version": 1,
+  "seed": 20261022,
+  "units": "m",
+  "boxes": [
+    [
+      0.55,
+      0.36,
+      0.24
+    ],
+    [
+      0.75,
+      0.51,
+      0.32
+    ],
+    [
+      0.63,
+      0.37,
+      0.28
+    ],
+    [
+      0.75,
+      0.51,
+      0.32
+    ],
+    [
+      0.75,
+      0.51,
+      0.32
+    ],
+    [
+      0.55,
+      0.36,
+      0.24
+    ],
+    [
+      0.55,
+      0.36,
+      0.24
+    ],
+    [
+      0.55,
+      0.36,
+      0.24
+    ],
+    [
+      0.63,
+      0.37,
+      0.28
+    ],
+    [
+      0.63,
+      0.37,
+      0.28
+    ]
+  ],
+  "fixture_kind": "published_suitcase_cuboid_envelopes",
+  "sequence_kind": "input_order_not_execution_order",
+  "geometry": {
+    "shape": "solid_cuboid",
+    "pose": "lying_flat",
+    "dimension_order": [
+      "standing_height_as_length_x",
+      "width_y",
+      "depth_as_height_z"
+    ],
+    "wheels_included": true,
+    "trolley_handle": "retracted",
+    "expansion": "closed",
+    "added_clearance_m": 0.0
+  },
+  "distribution": {
+    "counts_by_nominal_inches": {
+      "20": 4,
+      "23": 3,
+      "28": 3
+    },
+    "randomization": "fixed counts, shuffled order; no dimension jitter"
+  },
+  "sources_checked_on": "2026-10-22",
+  "catalog": {
+    "20": {
+      "model": "Samsonite ENWRAP SPINNER 55/20 EXP",
+      "exterior_hwd_cm": [
+        55.0,
+        36.0,
+        24.0
+      ],
+      "source_url": "https://www.samsonite.com.ph/samsonite/enwrap/spinner-55/20-exp/ss-125647-4386.html"
+    },
+    "23": {
+      "model": "Samsonite ZENPOD SPINNER 63/23",
+      "exterior_hwd_cm": [
+        63.0,
+        37.0,
+        28.0
+      ],
+      "source_url": "https://www.samsonite.co.th/en/samsonite/zenpod/spinner-63/23/ss-154737-1259.html"
+    },
+    "28": {
+      "model": "Samsonite ENWRAP SPINNER 75/28 EXP",
+      "exterior_hwd_cm": [
+        75.0,
+        51.0,
+        32.0
+      ],
+      "source_url": "https://www.samsonite.com.ph/luggage/enwrap-spinner-exp.html?dwvar_enwrap-spinner-exp_color=4386&dwvar_enwrap-spinner-exp_productSize=75+cm"
+    }
+  },
+  "items": [
+    {
+      "id": "B1",
+      "input_index": 0,
+      "nominal_inches": 20,
+      "catalog_key": "20",
+      "dimensions_m": [
+        0.55,
+        0.36,
+        0.24
+      ]
+    },
+    {
+      "id": "B2",
+      "input_index": 1,
+      "nominal_inches": 28,
+      "catalog_key": "28",
+      "dimensions_m": [
+        0.75,
+        0.51,
+        0.32
+      ]
+    },
+    {
+      "id": "B3",
+      "input_index": 2,
+      "nominal_inches": 23,
+      "catalog_key": "23",
+      "dimensions_m": [
+        0.63,
+        0.37,
+        0.28
+      ]
+    },
+    {
+      "id": "B4",
+      "input_index": 3,
+      "nominal_inches": 28,
+      "catalog_key": "28",
+      "dimensions_m": [
+        0.75,
+        0.51,
+        0.32
+      ]
+    },
+    {
+      "id": "B5",
+      "input_index": 4,
+      "nominal_inches": 28,
+      "catalog_key": "28",
+      "dimensions_m": [
+        0.75,
+        0.51,
+        0.32
+      ]
+    },
+    {
+      "id": "B6",
+      "input_index": 5,
+      "nominal_inches": 20,
+      "catalog_key": "20",
+      "dimensions_m": [
+        0.55,
+        0.36,
+        0.24
+      ]
+    },
+    {
+      "id": "B7",
+      "input_index": 6,
+      "nominal_inches": 20,
+      "catalog_key": "20",
+      "dimensions_m": [
+        0.55,
+        0.36,
+        0.24
+      ]
+    },
+    {
+      "id": "B8",
+      "input_index": 7,
+      "nominal_inches": 20,
+      "catalog_key": "20",
+      "dimensions_m": [
+        0.55,
+        0.36,
+        0.24
+      ]
+    },
+    {
+      "id": "B9",
+      "input_index": 8,
+      "nominal_inches": 23,
+      "catalog_key": "23",
+      "dimensions_m": [
+        0.63,
+        0.37,
+        0.28
+      ]
+    },
+    {
+      "id": "B10",
+      "input_index": 9,
+      "nominal_inches": 23,
+      "catalog_key": "23",
+      "dimensions_m": [
+        0.63,
+        0.37,
+        0.28
+      ]
+    }
+  ]
+}

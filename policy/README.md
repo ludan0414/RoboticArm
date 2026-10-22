@@ -1,5 +1,44 @@
 # Newton 集装箱粗仿真
 
+## 当前箱单：十个 55×35×20 cm 箱子
+
+按现场手头箱子的尺寸，当前已生成轨迹的输入为
+`demo_data/inputs/identical_55x35x20_10.json`：十箱全部 `[0.55,0.35,0.20] m`，
+平放，使用长方体包络，不加入尺寸扰动。前一份混合 20/23/28 寸输入保留为独立 fixture。
+
+```powershell
+python generate_suitcase_inputs.py --fixed-size-cm 55 35 20 --output demo_data/inputs/another_fixed55.json
+```
+
+可行域探索按这批箱子的实际厚度和可支撑堆叠高度取点；不会把原 25 cm 网格当作 20 cm 箱的放置高度。
+真机按钮操作台也支持“初始化归位”或“跳过初始化，从当前位置开始”，两种选择后都等待单独 Pick。
+
+## 真实行李箱外包络输入（20 / 23 / 28 寸）
+
+新增输入 `demo_data/inputs/suitcases10_seed_20261022.json`，共 10 箱：20 寸 4 个、
+23 寸 3 个、28 寸 3 个。固定 seed 混排为 `20,28,23,28,28,20,20,20,23,23`。
+这是上料输入顺序；实际放置顺序需要贪心重新计算。
+
+寸数不对应唯一外尺寸。本 fixture 选用品牌官网具体型号的未扩展外尺寸，包含轮子，
+拉杆收起；用实心长方体包络，平放后 `[L,W,H]` 分别取站立高度、宽度、厚度：
+
+| 规格 | 长方体 L×W×H（m） | 官方来源 |
+|---|---|---|
+| 20 寸 | 0.55 × 0.36 × 0.24 | [Samsonite ENWRAP 55/20](https://www.samsonite.com.ph/samsonite/enwrap/spinner-55/20-exp/ss-125647-4386.html) |
+| 23 寸 | 0.63 × 0.37 × 0.28 | [Samsonite ZENPOD 63/23](https://www.samsonite.co.th/en/samsonite/zenpod/spinner-63/23/ss-154737-1259.html) |
+| 28 寸 | 0.75 × 0.51 × 0.32 | [Samsonite ENWRAP 75/28](https://www.samsonite.com.ph/luggage/enwrap-spinner-exp.html?dwvar_enwrap-spinner-exp_color=4386&dwvar_enwrap-spinner-exp_productSize=75+cm) |
+
+来源核对日期 2026-10-22。JSON 保留型号、来源链接、包络约定、每箱规格及尺寸；
+`boxes` 字段兼容 `demo_contract.load_box_input`。尺寸不加随机扰动、不额外增加安全余量。
+
+```powershell
+cd policy
+python generate_suitcase_inputs.py --seed 20261023 --output demo_data/inputs/suitcases10_seed_20261023.json
+```
+
+生成器只写输入 JSON，不打开可视化。这个新箱单尚未生成对应的可行域、放置表和轨迹，
+不能将原十箱的小箱轨迹直接换名套用；现有真机默认配置对应上面的十个 55×35×20 cm 箱子。
+
 ## 当前 10 箱演示：右侧地面上料＋抬高观察位
 
 ```powershell
@@ -9,8 +48,10 @@ python run_ground_greedy10_demo.py
 ```
 
 与 `run_greedy10_demo.py` 一样完整播放 10 箱，不是单箱片段。
-上料点按画面方向修正为机械臂基座坐标的水平 **`(+1.2, 0) m`**，箱底在 world 地面 `z=0`；
-当前场景约对应 world `(0, +1.2)`。箱子中心高度为各箱高度的一半。
+场景使用现场提供的 `deployment_ws/config/scene_tf.loading_site.yaml`，基座 yaw 为 -90°。
+面对航空箱，基座 +X 指向左手、+Y 指向后方。右侧上料点为基座坐标的水平
+**`(-1.2, 0) m`**，箱底在 world 地面 `z=0`；当前场景约对应 world `(0, +1.2)`。
+箱子中心高度为各箱高度的一半，航空箱使用 YAML 中完整的 roll/pitch/yaw。
 初始与每轮返回的观察位，工具接触点 world Z 与机械臂底座高度一致，当前为约 `0.86 m`。
 
 默认每轮在 `SPAWN` 后停住：箱子已出现，机械臂保持高观察位。
@@ -23,13 +64,14 @@ PLACE → RELEASE → RETREAT → RETURN → WAIT`，最后一箱返回高观察
 `OBSERVE` 是演示中的观察停留阶段；这个 Newton 回放本身没有运行视觉检测网络。
 取箱后先接到原供料点的关节姿态，原来的入舱、放置和退出关节样本直接复用，放置顺序和目标不变。
 
-10 箱轨迹已生成在 `demo_data/ground_greedy10_observe/`，包含 `MOTION_READY.json`；
+10 个 55×35×20 cm 箱子的轨迹已生成在 `demo_data/site55_ground_greedy10/`，包含 `MOTION_READY.json`；
 启动直接回放，不再规划。若指定全新的 `--bundle`，首次会先生成完整十箱轨迹，再打开窗口。
 默认 30 fps，可加 `--fps 60`。`preview_ground_feeder.py` 也转到同一个完整十箱入口。
 仓库保留两个可直接回放的数据包和随机输入 JSON；旧预览、未完成的连接实验和本地调试日志
 不随代码发布。录制文件按原字节保留；回放校验支持 checkout 路径和 Windows/Linux 换行差异。
-按本次要求未运行碰撞/轨迹验证或测试，窗口仍标记 `PREVIEW (unvalidated)`。
-下方 `greedy10/` 保留原供料点认证包，作为入舱轨迹来源。
+入舱和放置来源包 `demo_data/site55_greedy10/` 已完成十箱编译及其内置 IK/碰撞检查。
+地面接驳按要求未追加碰撞验证，窗口标记 `PREVIEW (unvalidated)`；整段地面路线仍是运动学预览。
+下方 `greedy10/` 和原 `ground_greedy10_observe/` 保留为旧场景的历史演示包。
 
 ## 10 箱贪心 demo：先准备，后回放
 

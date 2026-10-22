@@ -86,7 +86,7 @@ class MotionCompiler(Pipeline):
             local_q = np.asarray(row["orientation"]["quaternion_xyzw"])
             route = [world_pose(Pose(np.asarray(p) + dims / 2, local_q), self.container, self.hull)
                      for p in row["route"]]
-            contacts = [p.center + [0, 0, dims[2] / 2] for p in route]
+            contacts = [p.center + Rotation.from_quat(p.quat).apply([0, 0, dims[2] / 2]) for p in route]
             yaw = float(self.container["rotation_rpy"][2]) + math.radians(row["orientation"]["yaw_deg"])
             if index == 0:
                 self.enter("RESET_HOME")

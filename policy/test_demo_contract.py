@@ -3,10 +3,18 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from demo_contract import check_bundle, freeze_bundle, generate_boxes, write_json
+from demo_contract import (check_bundle, freeze_bundle, generate_boxes, write_json,
+                           stack_contact_heights)
 
 
 class DemoContractTests(unittest.TestCase):
+    def test_supported_heights_use_actual_boxes_and_bounded_counts(self):
+        heights = stack_contact_heights([[.55, .36, .24], [.63, .37, .28]], 1.3)
+        self.assertEqual(heights, [.24, .28, .52])
+        self.assertNotIn(.48, heights)  # There is only one 24cm case.
+        self.assertEqual(stack_contact_heights([[.75, .51, .32]] * 5, 1.3),
+                         [.32, .64, .96, 1.28])
+
     def test_random_fixture_is_reproducible_and_has_ten_varied_boxes(self):
         first = generate_boxes(20261022)
         self.assertEqual(first, generate_boxes(20261022))

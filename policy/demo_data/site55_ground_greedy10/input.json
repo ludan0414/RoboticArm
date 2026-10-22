@@ -1,0 +1,161 @@
+{
+  "schema_version": 1,
+  "units": "m",
+  "boxes": [
+    [
+      0.55,
+      0.35,
+      0.2
+    ],
+    [
+      0.55,
+      0.35,
+      0.2
+    ],
+    [
+      0.55,
+      0.35,
+      0.2
+    ],
+    [
+      0.55,
+      0.35,
+      0.2
+    ],
+    [
+      0.55,
+      0.35,
+      0.2
+    ],
+    [
+      0.55,
+      0.35,
+      0.2
+    ],
+    [
+      0.55,
+      0.35,
+      0.2
+    ],
+    [
+      0.55,
+      0.35,
+      0.2
+    ],
+    [
+      0.55,
+      0.35,
+      0.2
+    ],
+    [
+      0.55,
+      0.35,
+      0.2
+    ]
+  ],
+  "fixture_kind": "user_supplied_identical_cuboids",
+  "sequence_kind": "input_order_not_execution_order",
+  "geometry": {
+    "shape": "solid_cuboid",
+    "pose": "lying_flat",
+    "dimension_order": [
+      "length_x",
+      "width_y",
+      "height_z"
+    ],
+    "added_clearance_m": 0.0
+  },
+  "provenance": "User-supplied physical case: 55 x 35 x 20 cm",
+  "items": [
+    {
+      "id": "B1",
+      "input_index": 0,
+      "dimensions_m": [
+        0.55,
+        0.35,
+        0.2
+      ]
+    },
+    {
+      "id": "B2",
+      "input_index": 1,
+      "dimensions_m": [
+        0.55,
+        0.35,
+        0.2
+      ]
+    },
+    {
+      "id": "B3",
+      "input_index": 2,
+      "dimensions_m": [
+        0.55,
+        0.35,
+        0.2
+      ]
+    },
+    {
+      "id": "B4",
+      "input_index": 3,
+      "dimensions_m": [
+        0.55,
+        0.35,
+        0.2
+      ]
+    },
+    {
+      "id": "B5",
+      "input_index": 4,
+      "dimensions_m": [
+        0.55,
+        0.35,
+        0.2
+      ]
+    },
+    {
+      "id": "B6",
+      "input_index": 5,
+      "dimensions_m": [
+        0.55,
+        0.35,
+        0.2
+      ]
+    },
+    {
+      "id": "B7",
+      "input_index": 6,
+      "dimensions_m": [
+        0.55,
+        0.35,
+        0.2
+      ]
+    },
+    {
+      "id": "B8",
+      "input_index": 7,
+      "dimensions_m": [
+        0.55,
+        0.35,
+        0.2
+      ]
+    },
+    {
+      "id": "B9",
+      "input_index": 8,
+      "dimensions_m": [
+        0.55,
+        0.35,
+        0.2
+      ]
+    },
+    {
+      "id": "B10",
+      "input_index": 9,
+      "dimensions_m": [
+        0.55,
+        0.35,
+        0.2
+      ]
+    }
+  ]
+}

@@ -13,7 +13,8 @@ import xml.etree.ElementTree as ET
 from container_demo import FRAME_DT
 import warp as wp
 import yaml
-from demo_contract import digest, generate_boxes, load_box_input, write_json, freeze_bundle
+from demo_contract import (digest, generate_boxes, load_box_input, write_json,
+                           freeze_bundle, stack_contact_heights, domain_y_positions)
 from demo_workspace import CertifiedWorkspace, explore_domain, recheck_domain
 from demo_greedy import greedy_sequence
 from demo_feeder import FEEDER_CENTER_M
@@ -21,7 +22,7 @@ from online_packing_real import Hull
 from roboticarm_newton import DEFAULT_SOURCE, make_robot_urdf, scene_paths
 
 
-def model_manifest(source_root, scene):
+def model_manifest(source_root, scene, top_heights=None, y_positions=None):
     source, _, models = scene_paths(source_root)
     urdf = make_robot_urdf(source, models)
     paths = {Path(m.get("filename")) for m in ET.fromstring(urdf).iter("mesh")}
@@ -33,6 +34,10 @@ def model_manifest(source_root, scene):
                 collision_code_sha256=digest(Path(__file__).with_name("demo_collision.py")),
                 source_root=str(source_root.resolve()))
     data["srdf_sha256"] = digest(Path(__file__).resolve().parents[1] / "src/luggage_description/config/S20_with_camera.srdf")
+    if top_heights is not None:
+        data["domain_top_heights_m"] = list(top_heights)
+    if y_positions is not None:
+        data["domain_y_positions_m"] = list(y_positions)
     data["identity"] = hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
     return data
 
@@ -67,7 +72,9 @@ def main():
         # All later phases consume the persisted test fixture.
         manifest = load_box_input(args.output / "input.json")
         shutil.copyfile(scene, args.output / "scene_tf.yaml")
-        identity = model_manifest(args.source_root, scene)
+        top_heights = stack_contact_heights(manifest["boxes"])
+        y_positions = domain_y_positions(manifest["boxes"])
+        identity = model_manifest(args.source_root, scene, top_heights, y_positions)
         write_json(args.output / "model_manifest.json", identity)
         hull = Hull.from_config(yaml.safe_load(scene.read_text(encoding="utf-8")))
         wp.set_device(args.device)
@@ -82,6 +89,8 @@ def main():
                 if prior_identity[key] != identity[key]:
                     raise ValueError("pre-explored domain model mismatch: " + key)
             domain = recheck_domain(workspace, hull, args.domain_source, args.output / "domain.json")
+            domain = explore_domain(workspace, hull, args.output / "domain.json",
+                                    top_heights=top_heights, y_positions=y_positions, prior=domain)
             domain["model_identity"] = identity["identity"]
             write_json(args.output / "domain.json", domain)
             write_json(args.domain_cache, domain)
@@ -90,7 +99,8 @@ def main():
             write_json(args.output / "domain.json", domain)
             print(f"REUSE_DOMAIN certified={domain['accepted']}", flush=True)
         else:
-            domain = explore_domain(workspace, hull, args.output / "domain.json")
+            domain = explore_domain(workspace, hull, args.output / "domain.json",
+                                    top_heights=top_heights, y_positions=y_positions)
             domain["model_identity"] = identity["identity"]
             write_json(args.output / "domain.json", domain)
             args.domain_cache.parent.mkdir(parents=True, exist_ok=True)
@@ -99,9 +109,16 @@ def main():
             raise RuntimeError("no certified poses in explored grid")
         stage = "GREEDY_PLAN"
         print("当前阶段: 贪心生成完整顺序、位置和 orientation (GREEDY_PLAN)", flush=True)
-        rows = greedy_sequence(manifest["boxes"], hull, domain, workspace)
+        # The original staging point assumed <=0.5m footprints. Keep every
+        # incoming payload fully outside the door before aligning its rail.
+        required_offset = max(max(box[:2]) for box in manifest["boxes"]) / 2 + .05
+        feeder = list(FEEDER_CENTER_M)
+        if required_offset > -feeder[0] + 1e-6:
+            feeder[0] = -round(required_offset + .02, 3)
+        rows = greedy_sequence(manifest["boxes"], hull, domain, workspace,
+                               feeder_center=feeder)
         plan = dict(schema_version=1, policy="greedy_back_to_front", seed=manifest.get("seed"),
-                    feeder_center_container_door_floor_m=list(FEEDER_CENTER_M),
+                    feeder_center_container_door_floor_m=feeder,
                     position_frame="world", route_frame="container_door_floor", sequence=rows)
         write_json(args.output / "plan.json", plan)
         stage = "COMPILE_TRAJECTORY"

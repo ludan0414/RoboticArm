@@ -1,7 +1,7 @@
 """Export commissioning defaults assuming the hardware cell matches the demo.
 
 Only poses/planning intent are exported, never executable joint recordings.
-Run from policy/ using the Newton environment (only numpy is needed here).
+Run from policy/ using the Newton environment (numpy, scipy and PyYAML).
 """
 import argparse
 import hashlib
@@ -9,6 +9,8 @@ import json
 from pathlib import Path
 
 import numpy as np
+import yaml
+from scipy.spatial.transform import Rotation
 
 
 def pose_dict(pose):
@@ -44,8 +46,15 @@ def export_profile(bundle):
     bundle = Path(bundle)
     plan_path, trace_path = bundle / "plan.json", bundle / "trajectory.npz"
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
-    if plan["feeder"]["xy_m"] != [1.2, 0.0]:
-        raise ValueError("expected the base-frame +1.2m ground feeder demo")
+    if plan["feeder"]["xy_m"] != [-1.2, 0.0]:
+        raise ValueError("expected the approved base-frame -1.2m right-hand feeder")
+    scene = yaml.safe_load((bundle / "scene_tf.yaml").read_text(encoding="utf-8"))
+    pedestal = scene["pedestal"]
+    base_rotation = (Rotation.from_euler("xyz", pedestal["rotation_rpy"])
+                     * Rotation.from_euler("xyz", scene["robot"]["rotation_rpy"]))
+    base_position = (np.asarray(pedestal["translation"]) + Rotation.from_euler(
+        "xyz", pedestal["rotation_rpy"]).apply([0, 0, pedestal["size"][2]]))
+    container = next(pose for pose in scene["static_transforms"] if pose["child"] == "container_link")
     cycles = []
     with np.load(trace_path, allow_pickle=False) as trace:
         first_id = plan["sequence"][0]["id"]
@@ -77,22 +86,30 @@ def export_profile(bundle):
     return dict(profile="site_commissioning_v1", frame_id="world",
                 tool_frame="suction_contact_frame",
                 assumptions=dict(
-                    calibration_source="simulation_layout_assumed_equal_to_hardware",
+                    calibration_source="user_provided_scene_tf_yaml",
                     source_bundle="policy/demo_data/" + bundle.name,
                     source_sha256=hashes,
-                    feeder_frame="elfin_base_link", feeder_xy_m=[1.2, 0.0],
+                    feeder_frame="elfin_base_link", feeder_xy_m=[-1.2, 0.0],
                     ground_world_z_m=0.0,
-                    base_world_translation_m=[0.0, 0.0, .86],
-                    base_world_yaw_rad=1.5708,
+                    base_world_translation_m=base_position.tolist(),
+                    base_world_yaw_rad=float(base_rotation.as_euler("xyz")[2]),
                     hardware_motion_validated=False,
                     expected_dims_are_detection_inputs=False),
+                motion_safety=dict(schema_version=1,
+                    expected_base_world_pose=pose_dict(np.r_[base_position, base_rotation.as_quat()]),
+                    expected_container_world_pose=pose_dict(np.r_[container["translation"],
+                        Rotation.from_euler("xyz", container["rotation_rpy"]).as_quat()]),
+                    feeder_base_xy_m=[-1.2, 0.0], ground_base_z_m=-float(base_position[2]),
+                    pickup_radius_m=.20, max_segment_translation_m=.30,
+                    max_segment_rotation_rad=float(np.pi / 3),
+                    axis_test_step_m=.02),
                 observe_tool_pose=observe, cycles=cycles)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bundle", type=Path,
-                        default=Path(__file__).parent / "demo_data/ground_greedy10_observe")
+                        default=Path(__file__).parent / "demo_data/site55_ground_greedy10")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()

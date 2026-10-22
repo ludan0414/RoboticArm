@@ -9,6 +9,26 @@ from verify_pick_place_run import BOX_STAGES, verify
 
 
 class EvidenceTests(unittest.TestCase):
+    def test_rotation_trace_serializes_float32_fk_position(self):
+        import io
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from run_pick_place_pipeline import Pipeline
+        run = object.__new__(Pipeline)
+        run.stage, run.trace = "ROTATE", io.StringIO()
+        run.q = np.zeros(6)
+        run.max_position_error = run.max_rotation_error = 0.0
+        run.ik = SimpleNamespace(last_diagnostics={},
+            solve_world_pose=lambda p, yaw: (True, np.zeros(6, dtype=np.float32)))
+        run.model = SimpleNamespace(
+            joint_limit_lower=SimpleNamespace(numpy=lambda: np.full(6, -6)),
+            joint_limit_upper=SimpleNamespace(numpy=lambda: np.full(6, 6)))
+        with patch("run_pick_place_pipeline.nearest_revolute_solution", side_effect=lambda q, *args: q):
+            run.solve(np.asarray([.1, .2, .86], dtype=np.float32), 0.0)
+        record = json.loads(run.trace.getvalue())
+        self.assertEqual(record["stage"], "ROTATE")
+        self.assertTrue(np.allclose(record["target_world"], [.1, .2, .86]))
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
