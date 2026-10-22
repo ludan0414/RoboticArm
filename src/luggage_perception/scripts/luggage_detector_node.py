@@ -945,8 +945,6 @@ class LuggageDetector(Node):
         only for a valid top and shares its acquisition identity.
         """
         _t0 = time.monotonic()
-        self._last_plane_detail = ""
-        self._last_component_diagnostics = {}
         if yolo_msg is None or not yolo_msg.detections:
             return "DETECT_DYNAMIC_TOP_NO_INSTANCE", None
         key = stamp_key(cloud_msg.header.stamp)
@@ -958,17 +956,7 @@ class LuggageDetector(Node):
         bbox = self._select_instance_bbox(yolo_msg)
         component = isolate_depth_component(
             depth, bbox=bbox, mask=mask, config=self._component_config)
-        self._last_component_diagnostics = dict(
-            component.diagnostics,
-            reason="ok" if component.ok else "DETECT_" + component.reason,
-            minimum_coverage=float(self._component_config.min_coverage_frac),
-            median_band_mm=float(self._component_config.median_band_mm),
-            adjacent_jump_mm=float(self._component_config.adjacent_jump_mm),
-            bbox=list(bbox) if bbox is not None else None,
-            acquisition_stamp=float(cloud_stamp_sec))
         if not component.ok:
-            self._warn_throttled("luggage_detector: " + self._failure_message(
-                "DETECT_" + component.reason))
             return "DETECT_" + component.reason, None
         mat4, tf_err = _lookup_transform_matrix(
             self._tf_buffer, depth_msg.header.frame_id,
@@ -1052,6 +1040,12 @@ class LuggageDetector(Node):
         if examples:
             text += "; e.g. " + "; ".join(examples)
         return text
+
+    def _failure_message(self, reason):
+        detail = str(getattr(self, "_last_plane_detail", "") or "")
+        if detail:
+            return "%s: %s" % (reason, detail)
+        return str(reason)
 
     def _support_info_cb(self, msg):
         """Latest aligned-depth camera info (colour-grid intrinsics)."""
@@ -1779,13 +1773,12 @@ class LuggageDetector(Node):
             "luggage_detector: cloud too old (%.2fs, max %.1fs)"
             % (age, self._cloud_max_age))
 
-    def _failure_message(self, reason=None):
-        from luggage_perception.detection_failure_details import format_detection_failure
-        return format_detection_failure(
-            reason or self._last_failure_reason or "DETECT_FAILED",
-            component=getattr(self, "_last_component_diagnostics", None),
-            plane_detail=getattr(self, "_last_plane_detail", ""),
-            cloud_age=self._last_cloud_age_sec, cloud_max_age=self._cloud_max_age)
+    def _failure_message(self):
+        reason = str(self._last_failure_reason or "DETECT_FAILED")
+        if reason == "DETECT_STALE_CLOUD" and self._last_cloud_age_sec is not None:
+            return "DETECT_STALE_CLOUD (age=%.2fs max=%.1fs)" % (
+                self._last_cloud_age_sec, self._cloud_max_age)
+        return reason
 
     def _frame_to_detect(self, frame):
         age = self._stamp_age_sec(frame.header.stamp)
@@ -1918,7 +1911,6 @@ class LuggageDetector(Node):
             stats.get("last_cargo_n_points", stats.get("n_points", 0)) or 0)
         record["cargo_source"] = str(stats.get("source") or "")
         record["support_mode"] = self._support_mode
-        record["depth_component"] = getattr(self, "_last_component_diagnostics", {})
         if detected is not None:
             record["detected"] = {
                 "id": detected.id,
