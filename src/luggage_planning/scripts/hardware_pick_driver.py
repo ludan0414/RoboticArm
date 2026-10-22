@@ -24,6 +24,11 @@ Vacuum attach after the attach segment (box DO0/DO1, wait DI0). Default
 holds suction after retreat so you can see the box; Ctrl-C or --release
 drops it.
 
+With --place-target JSON, continue after successful pick to the policy's
+world-frame box-centre pose, release, confirm DI0 low, then retreat. Place
+faults preserve vacuum until explicit recovery; no automatic exit release.
+Exit 11 is a place release/scene/retreat fault.
+
 Person on e-stop. Does not start Gazebo. Does not spawn a simulated box.
 
 Typical order after hardware_pick.launch.py is up:
@@ -77,6 +82,9 @@ from luggage_planning.suction_pick_session import (
     SessionConfig,
 )
 from luggage_planning.suction_pick_session import DetectionView
+from luggage_planning.policy_place import (
+    build_place_segments, parse_place_target, run_place,
+)
 
 
 class RosPickSessionPorts:
@@ -560,6 +568,18 @@ class HardwarePickDriver(Node):
         detection = self._detection_view(box)
         self._log_detection(box, detection)
 
+        # Validate the policy/grasp conversion before any pick motion. The
+        # successful candidate is only known after PickSession's retry loop.
+        place_sequences = {}
+        if self._args.place_target_data is not None and not self._args.dry_run:
+            try:
+                for candidate in detection.candidates:
+                    place_sequences[candidate.candidate_id] = build_place_segments(
+                        self._args.place_target_data, detection, candidate)
+            except (ValueError, TypeError) as exc:
+                self.get_logger().error("place target unusable: %s" % exc)
+                return 4
+
         try:
             model = self._load_contact_model()
         except Exception as exc:  # noqa: BLE001 - fail closed at startup
@@ -593,6 +613,9 @@ class HardwarePickDriver(Node):
                         view.candidate_id,
                         [(s.name, s.type, round(s.target_pose.position.z, 3))
                          for s in segments]))
+                for segment in place_sequences.get(view.candidate_id, []):
+                    self.get_logger().info("place preview %s: %s" % (
+                        view.candidate_id, segment))
             return 0
 
         ports = RosPickSessionPorts(self, self,
@@ -604,6 +627,23 @@ class HardwarePickDriver(Node):
                 "pick session: exit=%d reason=%s detail=%s candidate=%s"
                 % (result.exit_code, result.reason_code, result.detail,
                    result.selected_candidate_id))
+            if result.completed and self._args.place_target_data is not None:
+                # Do not enable the pick-only shutdown release handler: every
+                # place fault needs explicit recovery, including Ctrl-C.
+                segments = place_sequences.get(result.selected_candidate_id)
+                if not segments:
+                    self.get_logger().error("PLACE_CARRY_FAULT: selected grasp missing")
+                    return 10
+                for segment in segments:
+                    ports.log_event(dict(stage="place_target", name=segment.name,
+                                         pose=vars(segment.target_pose.position),
+                                         orientation=vars(segment.target_pose.orientation)))
+                code, reason = run_place(
+                    ports, segments, use_scene=not self._args.no_scene,
+                    low_hold_sec=self._args.release_low_hold_sec,
+                    release_deadline_sec=self._args.release_deadline_sec)
+                self.get_logger().info("place session: exit=%d reason=%s" % (code, reason))
+                return code
             if result.completed and self._args.use_vacuum and self._args.release:
                 vac_ok, vac_msg = self.vacuum(False)
                 self.get_logger().info(
@@ -655,6 +695,10 @@ def main(argv=None):
     parser.add_argument(
         "--release", action="store_true",
         help="Drop the box after pick_retreat (default holds suction).")
+    parser.add_argument(
+        "--place-target", default="", metavar="JSON",
+        help="After pick, place at the policy's world-frame box-centre pose. "
+             "See deployment_ws/docs/policy_place.md for the JSON contract.")
     parser.add_argument("--settle-sec", type=float, default=2.0)
     parser.add_argument("--goto-timeout", type=float, default=90.0)
     parser.add_argument("--detect-timeout", type=float, default=40.0)
@@ -680,6 +724,15 @@ def main(argv=None):
         help="Write the session JSONL trace to this path (evidence).")
     parser.set_defaults(use_vacuum=True)
     args = parser.parse_args(args=argv)
+    args.place_target_data = None
+    if args.place_target:
+        if args.release or args.no_scene or not args.use_vacuum:
+            parser.error("--place-target requires scene/vacuum and cannot combine with --release")
+        try:
+            with open(args.place_target, encoding="utf-8") as stream:
+                args.place_target_data = parse_place_target(json.load(stream))
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+            parser.error("invalid --place-target: %s" % exc)
 
     rclpy.init()
     node = HardwarePickDriver(args)

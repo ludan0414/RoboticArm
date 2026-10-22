@@ -10,6 +10,9 @@
 #
 #   ./scripts/run_floor_box_pick.sh              # plan-only (no pick motion)
 #   ./scripts/run_floor_box_pick.sh execute       # PickSession execute
+#   ./scripts/run_floor_box_pick.sh plan --place-target /path/to/target.json
+#   ./scripts/run_floor_box_pick.sh execute --place-target /path/to/target.json
+#     # pick -> policy place -> release -> retreat; see docs/policy_place.md
 #
 set -euo pipefail
 

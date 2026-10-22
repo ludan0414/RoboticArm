@@ -1,5 +1,11 @@
 # 实机代码 — Real-robot runtime (`deployment_ws`)
 
+当前 Orin（Humble 感知）＋笔记本（Jazzy 规划/执行）的逐窗口启动、人工上箱确认、
+单箱 pick/place 和返回等待位的流程，见专门的
+**[真机操作文档](docs/real_robot_runbook.md)**。
+其中明确区分已接通的单箱入口和待接入的人工确认/自动退舱返回循环。
+下文保留早期单机与底层检查说明；当前双机操作优先从上述文档开始。
+
 **实机代码 (site / real-cell).** This tree is not part of the Gazebo
 simulation stack. Do not treat it as a replacement for
 `src/luggage_perception` canonical preprocessor configs.
@@ -31,9 +37,9 @@ workspace next to the luggage stack (`src/`). Build it from
 The Noetic package is not under `src/` so `colcon build` does not touch it.
 The Noetic container bind-mounts it to `/catkin_ws/src/elfin_cps_executor`.
 
-This host currently has **Jazzy only** (`/opt/ros/jazzy`). Build and run
-the executor against Jazzy. Do not source Humble (or a Humble colcon
-overlay) in the same shell.
+The laptop executor runs against **Jazzy** (`/opt/ros/jazzy`). Orin perception
+uses Humble in its own host environment. Do not source Humble (or a Humble
+colcon overlay) in a Jazzy shell.
 
 Site worksheet: copy [`config/site_vars.yaml.example`](config/site_vars.yaml.example)
 to `config/site_vars.yaml` and fill measured IPs / geometry.
@@ -91,20 +97,28 @@ ros2 run luggage_perception dump_camera_frames.py --out ~/robotarm_site_frames
 
 ## Jazzy vs Humble
 
-They conflict if mixed in one process or one DDS graph:
+Do not mix their overlays in one shell or process:
 
-- This machine has no `/opt/ros/humble`. The luggage stack was written for
+- The original Jazzy laptop had no `/opt/ros/humble`. The luggage stack was written for
   Humble (Python 3.10, Gazebo Fortress). Jazzy is Python 3.12 and Harmonic.
 - Do not `source /opt/ros/humble` then overlay Jazzy, or the reverse.
 - Do not run `luggage_gazebo/sim_world.launch.py` on Jazzy expecting the
   Humble Fortress launch to work.
-- Give Humble Docker / Noetic and this Jazzy executor **different
-  `ROS_DOMAIN_ID`s** if both are up on the same LAN.
+- The current Orin Humble perception + laptop Jazzy execution deployment
+  intentionally shares `ROS_DOMAIN_ID=7` with matched interfaces, as recorded
+  in the [dual-host baseline](../docs/hardware/2026-09-22_orin_deploy_baseline.md).
+  Unrelated simulation or legacy test graphs must stay isolated; do not
+  apply a different domain to one half of this paired hardware graph.
 - The executor package itself is distro-light (`rclpy` + `control_msgs`)
   and is the Jazzy real-robot target. Full luggage closed-loop on Jazzy
   lives on `origin/ros2_jazzy` (`elfin_jazzy_ws`), not this launch.
 
 ## Execution handshake
+
+For policy-driven placement after pick, see
+[`docs/policy_place.md`](docs/policy_place.md). The existing floor-box driver
+accepts `--place-target target.json` for a world-frame box-centre position and
+quaternion, including optional policy via poses.
 
 The planner/test client **must wait for the FollowJointTrajectory result**.
 That result is the only "you may start the next step" signal.
