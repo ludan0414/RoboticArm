@@ -1,5 +1,161 @@
 # Newton 集装箱粗仿真
 
+## 当前 10 箱演示：右侧地面上料＋抬高观察位
+
+```powershell
+conda activate newton-rope
+cd D:\Programming\RoboticArm\policy
+python run_ground_greedy10_demo.py
+```
+
+与 `run_greedy10_demo.py` 一样完整播放 10 箱，不是单箱片段。
+上料点按画面方向修正为机械臂基座坐标的水平 **`(+1.2, 0) m`**，箱底在 world 地面 `z=0`；
+当前场景约对应 world `(0, +1.2)`。箱子中心高度为各箱高度的一半。
+初始与每轮返回的观察位，工具接触点 world Z 与机械臂底座高度一致，当前为约 `0.86 m`。
+
+默认每轮在 `SPAWN` 后停住：箱子已出现，机械臂保持高观察位。
+在窗口右上角 **Loading control** 面板点击 **Start Pick**，才继续当前箱的
+`OBSERVE → APPROACH → PICK → ATTACH → LIFT → CARRY →
+PLACE → RELEASE → RETREAT → RETURN → WAIT`，最后一箱返回高观察位后显示 COMPLETE。
+下一箱出现后会再次等待点击；运动中按钮禁用，重复点击不会排队执行下一箱。
+这只是回放的人工授权按钮，不触发真机。想连续自动播放可运行
+`python run_ground_greedy10_demo.py --auto`。
+`OBSERVE` 是演示中的观察停留阶段；这个 Newton 回放本身没有运行视觉检测网络。
+取箱后先接到原供料点的关节姿态，原来的入舱、放置和退出关节样本直接复用，放置顺序和目标不变。
+
+10 箱轨迹已生成在 `demo_data/ground_greedy10_observe/`，包含 `MOTION_READY.json`；
+启动直接回放，不再规划。若指定全新的 `--bundle`，首次会先生成完整十箱轨迹，再打开窗口。
+默认 30 fps，可加 `--fps 60`。`preview_ground_feeder.py` 也转到同一个完整十箱入口。
+仓库保留两个可直接回放的数据包和随机输入 JSON；旧预览、未完成的连接实验和本地调试日志
+不随代码发布。录制文件按原字节保留；回放校验支持 checkout 路径和 Windows/Linux 换行差异。
+按本次要求未运行碰撞/轨迹验证或测试，窗口仍标记 `PREVIEW (unvalidated)`。
+下方 `greedy10/` 保留原供料点认证包，作为入舱轨迹来源。
+
+## 10 箱贪心 demo：先准备，后回放
+
+已准备的演示包是 `demo_data/greedy10/`，包含 10 个随机尺寸箱子。
+默认 seed `20261022`；另外两个随机箱单 seed 是 `20261023`、`20261024`。
+这些 JSON 位于 `demo_data/inputs/`，演示包内也保存了一份。
+
+```powershell
+conda activate newton-rope
+cd policy
+python run_greedy10_demo.py
+```
+
+现成包通过检查后直接打开 Viewer。播放顺序是
+`B3 → B2 → B8 → B5 → B1 → B10 → B9 → B7 → B4 → B6`。
+箱子统一从固定供料点生成：箱子中心在门口/地板坐标系中为
+`(-0.30, 0.50, 0.55) m`，当前场景世界坐标约为 `(-0.455, 0.485, 1.080) m`。
+抓取接触高度随箱高变化，生成点不随目标位置变化。
+贪心先比较所有剩余箱子的可行目标，按深度从里向外填；同一深度先下层，
+再按底面积排序。向门口推进后不再返回更深位置。当前前 9 箱目标中心深度
+为 `0.60 m`，最后一箱为 `0.20 m`。支撑、入口扫掠和完整进退路径仍需通过检查。
+每箱只在其 `SPAWN` 阶段出现；已放箱子一直留在场景中。
+窗口标题和终端显示箱子编号、`n/10` 和 `PICK` / `CARRY` / `PLACE` 等当前阶段。
+默认 30 帧/秒，当前演示 4215 帧约 141 秒，完成后显示 `10/10 COMPLETE` 并关闭。
+
+完整数据流程独立于可视化，重新准备可使用以下三个命令。输出目录必须不存在，
+避免覆盖失败案例：
+
+```powershell
+# 1. 仅生成随机测试 JSON，不导入 Newton，不打开窗口。
+python generate_box_inputs.py --output demo_data/new_inputs
+# 2. 预先探索/载入可行域，生成贪心列表，并验算全部 10 箱轨迹；不创建 Viewer。
+python prepare_greedy_demo.py --input demo_data/new_inputs/boxes_seed_20261022.json --output demo_data/new_demo
+# 3. 只读回放；不调用贪心或 IK。
+python replay_prepared_demo.py --bundle demo_data/new_demo
+```
+
+准备阶段依次为 `GENERATE_INPUTS → EXPLORE_DOMAIN → GREEDY_PLAN →
+COMPILE_TRAJECTORY → READY_FOR_REPLAY`。回放阶段逐箱执行
+`SPAWN → APPROACH → PICK → ATTACH → LIFT → CARRY → PLACE → RELEASE →
+RETREAT → RETURN → VERIFY`。首箱生成前只有一次显式的 `RESET_HOME` 仿真初始化；
+箱间返回是预先验算的连续动作，不重置机器人。回放开始前所有求解都已完成。
+
+演示包中的关键文件：
+
+| 文件 | 内容 |
+|---|---|
+| `input.json`、`inputs/*.json` | 固定 seed 的 10 箱尺寸，单位 m；数据不会为通过测试而重新抽样 |
+| `domain.json` | 880 个离散目标中保留的 669 个可行位姿，每点有 URDF 关节解和检查结果 |
+| `model_manifest.json` | URDF、SRDF、碰撞网格、场景和检查代码的版本哈希 |
+| `plan.json` | 每箱 `step`、`input_index`、`position_world_m`、`orientation_world_xyzw`、证书编号及入口路线 |
+| `trajectory.npz` | 全部关节、工具、箱体和场景 body 轨迹，以及阶段/箱号/吸附状态 |
+| `validation.json` | 10 箱落位、抓持恒定、依次生成、释放后固定及机器人碰撞检查结果 |
+| `READY.json` | 上述文件的 SHA-256；不完整或被修改的包不能回放 |
+
+可行域是固定工具姿态、固定场景下的**离散可行位姿集合**，不做连续空间插值
+认证。其检查包括关节限位、末端误差 ≤3 mm / 0.035 rad、机器人与静态场景及
+自身的碰撞；使用仓库 `S20_with_camera.srdf` 的允许接触对、固定/相邻连接规则，
+以及 1 mm 数值穿透容差。文件明确记录这些约束。工具目标在箱体上表面中心。
+未携带货物的可行域只是第一道门槛；整段轨迹还检查实际箱体/场景和机械臂/
+已放货物接触，允许当前箱子与吸盘面板的抓持接触。浮点、离散采样和模型
+允许接触对限定了这份检查的范围；它不是实机安全认证或接触动力学验证。
+
+可行域按模型哈希缓存到 `demo_data/urdf_domain.json`，换箱单可复用；模型、场景、
+SRDF 或检查逻辑变化时缓存失效。`plan.json` 的目标位姿使用 world 坐标；
+`route` 和 `center_container_door_floor_m` 使用门口/地板参考的货柜局部坐标。
+orientation 四元数均为 xyzw。
+
+测试数据采用相关随机尺度：长/宽为 `[.5,.4] × Uniform(.86,1)`，高度从
+`[.25,.30]` m 抽样。这样仍是随机尺寸，同时可构造全底面支撑的堆叠。
+该 seed 的演示是一个确定性 10 箱工作负载，不代表随机箱单成功率。
+
+## 完整分阶段 pick/place pipeline
+
+`run_pick_place_pipeline.py` 在一次有限运行中读取箱单、建立 Newton 场景、
+调用当前 packing policy、逐箱生成箱体，然后执行接近、接触抓取、运动学吸附、
+抬起、搬运、下降放置、释放、退回和落位检查。终端逐阶段输出中文说明和稳定
+阶段码；Viewer 标题显示当前阶段。`status.json` 始终记录最新阶段。
+
+从仓库根目录运行：
+
+```powershell
+conda activate newton-rope
+cd policy
+# 无窗口验证一箱；默认尺寸 0.55 × 0.40 × 0.25 m，baseline 策略。
+python run_pick_place_pipeline.py --mode headless
+# 使用现有已训练 policy；一个完整周期后自动关闭窗口。
+python run_pick_place_pipeline.py --boxes "0.55,0.40,0.25" `
+  --checkpoint packing_policy_stateaware.pt --mode show
+# 也可输入现有箱单 JSON：
+python run_pick_place_pipeline.py --input packing_policy_input_example.json --mode headless
+```
+
+阶段顺序是 `INPUT → INITIALIZE → PLAN → RESET_HOME → SPAWN → APPROACH → PICK → ATTACH →
+LIFT → CARRY → PLACE → RELEASE → RETREAT → VERIFY → COMPLETE`。
+多箱时重复 `SPAWN…VERIFY`，最后统一 `COMPLETE`。策略先确定装箱顺序和入口路线，
+再在各箱路线起点生成对应箱体；当前取件位置是门口的虚拟供料位，非实机地面
+检测或取件平台流程。失败显示 `FAILED`，并保留 `failed_stage`，不会继续下一箱。
+
+`RESET_HOME` 是一次显式的仿真初态设置：在首个箱子生成前，将机械臂初始化到
+通过 IK 和货柜碰撞检查的预抓取位。它不是从 URDF 零位运动到该位置的轨迹，
+不宣称零位到供料位可达。首箱从这一初态进行接近和抓取；多箱间换位使用
+采样检查的关节路径搜索，限 1,200 节点 / 90 秒，失败即停止。
+
+搬运中的箱体由实际机械臂 FK 和 ATTACH 时记录的刚性变换驱动，不与机械臂分别
+插值。RELEASE 后箱体冻结在其实际落位，机械臂单独 RETREAT；VERIFY 比较实际 FK
+落位与 policy 目标，阈值 6 mm / 0.07 rad。每个 Cartesian 样本检查现有 Newton
+IK 的 3 mm / 0.035 rad 阈值、关节限位及机械臂对货柜网格碰撞。关节换位先
+选择限位内最近的等价转角，再尝试逐关节路径和双向 RRT；路径和插值执行均
+检查货柜碰撞。离散采样不等于连续轨迹碰撞认证。
+
+这是 Newton **箱体上表面中心抓持的运动学 pipeline**：本入口在现有 checker
+上将 IK 目标从箱体中心抬高半个箱高，策略仍输出箱体中心位姿，抓持使用实际
+FK 记录的刚性变换。它不调用接触求解器、不模拟真空 DI0、
+自由落体或释放后的沉降，也不新增自碰撞/已放货物碰撞认证。输入尺寸来自仿真
+箱单，不含相机检测。部署侧 `--place-target` 的实测吸附偏移转换仍是单独接口。
+
+默认保存到 `../docs/status/evidence/newton_pick_place/<时间>/`；可用 `--output`
+指定一个尚不存在的目录，避免覆盖失败案例。保存输入、场景配置、policy 计划、
+`stages.jsonl`、逐帧/IK 边界 `boundary.jsonl`、关节/工具/箱体轨迹
+`trajectory.npz`、`last_state.npz` 和 `result.json`。失败同样保存这些证据；
+`physics_verification=not_evaluated` 明确区分运动学验证和接触物理验证。
+可独立检查已保存运行（仅依赖 NumPy，无需启动 Newton/GPU）：
+`python verify_pick_place_run.py <证据目录>`。它检查阶段顺序、抓持变换恒定、
+释放后箱体固定，以及落位误差记录；破坏这些条件的负例测试必须失败。
+
 使用 Newton Physics 1.3.0。内边长 3.2 m 的立方体集装箱有五面厚 2.5 cm 的静态碰撞壁，`-X` 面开口。场景外是深色地面，带 0.5 m 间距的机器人仿真风格网格线和红/绿坐标轴。小箱子为尺寸略有差别的动态长方体，按 4×4 列密堆，最多四层；同列箱子的底面投影由下方箱子完整覆盖。64 箱时初始体积利用率约 90.6%。初始垂向留 2 mm 数值间隙，重力使箱子落到支撑面；直接贴合初始化会让当前 XPBD 参数下的堆叠不稳定。默认 XPBD、60 Hz、每帧两个子步、五次迭代。
 
 进入 `newton_container_demo` 目录并激活 Newton 环境；脚本默认读取仓库内的 `vendor/roboticarm` 资源，不需要外部 `RoboticArm` 路径：

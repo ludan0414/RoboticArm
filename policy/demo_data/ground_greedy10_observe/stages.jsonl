@@ -1,0 +1,161 @@
+{"stage": "RESET_HOME", "label": "初始化机械臂（仿真 reset）", "box_id": "B3", "attached": false, "elapsed_sec": 31.28099999999904}
+{"stage": "SPAWN", "label": "生成箱子", "box_id": "B3", "attached": false, "elapsed_sec": 31.28099999999904, "input_index": 2, "pose_world": [-4.3495546573790735e-06, 1.1999999999921167, 0.125, 0.0, 0.0, 0.7071093785300145, 0.7071041838335399]}
+{"stage": "OBSERVE", "label": "抬高观察箱子", "box_id": "B3", "attached": false, "elapsed_sec": 31.4220000000023}
+{"stage": "APPROACH", "label": "接近箱子", "box_id": "B3", "attached": false, "elapsed_sec": 31.53099999999904}
+{"stage": "PICK", "label": "抓取接触", "box_id": "B3", "attached": false, "elapsed_sec": 34.0}
+{"stage": "ATTACH", "label": "吸附（运动学约束）", "box_id": "B3", "attached": true, "elapsed_sec": 34.7970000000023}
+{"stage": "LIFT", "label": "抬起", "box_id": "B3", "attached": true, "elapsed_sec": 34.84400000000096}
+{"stage": "CARRY", "label": "搬运", "box_id": "B3", "attached": true, "elapsed_sec": 35.56300000000192}
+{"stage": "PLACE", "label": "下降放置", "box_id": "B3", "attached": true, "elapsed_sec": 36.15599999999904}
+{"stage": "RELEASE", "label": "释放", "box_id": "B3", "attached": true, "elapsed_sec": 36.26599999999962}
+{"stage": "RETREAT", "label": "退回", "box_id": "B3", "attached": false, "elapsed_sec": 36.34400000000096}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B3", "attached": false, "elapsed_sec": 36.46900000000096}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B3", "attached": false, "elapsed_sec": 36.9220000000023}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B3", "attached": false, "elapsed_sec": 37.09400000000096}
+{"stage": "WAIT", "label": "返回观察位，等待下一箱", "box_id": "B3", "attached": false, "elapsed_sec": 37.15599999999904}
+{"stage": "VERIFY_RESULT", "box_id": "B3", "position_error_m": 1.9822465358157027e-06, "rotation_error_rad": 9.135154303868384e-07}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B2", "attached": false, "elapsed_sec": 37.20300000000134}
+{"stage": "SPAWN", "label": "生成箱子", "box_id": "B2", "attached": false, "elapsed_sec": 37.23500000000058, "input_index": 1, "pose_world": [-4.3495546573790735e-06, 1.1999999999921167, 0.125, 0.0, 0.0, 0.7071093785300145, 0.7071041838335399]}
+{"stage": "OBSERVE", "label": "抬高观察箱子", "box_id": "B2", "attached": false, "elapsed_sec": 37.28099999999904}
+{"stage": "APPROACH", "label": "接近箱子", "box_id": "B2", "attached": false, "elapsed_sec": 37.40599999999904}
+{"stage": "PICK", "label": "抓取接触", "box_id": "B2", "attached": false, "elapsed_sec": 37.5470000000023}
+{"stage": "ATTACH", "label": "吸附（运动学约束）", "box_id": "B2", "attached": true, "elapsed_sec": 37.59400000000096}
+{"stage": "LIFT", "label": "抬起", "box_id": "B2", "attached": true, "elapsed_sec": 37.64099999999962}
+{"stage": "CARRY", "label": "搬运", "box_id": "B2", "attached": true, "elapsed_sec": 37.68800000000192}
+{"stage": "PLACE", "label": "下降放置", "box_id": "B2", "attached": true, "elapsed_sec": 38.40599999999904}
+{"stage": "RELEASE", "label": "释放", "box_id": "B2", "attached": true, "elapsed_sec": 38.51599999999962}
+{"stage": "RETREAT", "label": "退回", "box_id": "B2", "attached": false, "elapsed_sec": 38.59400000000096}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B2", "attached": false, "elapsed_sec": 38.6720000000023}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B2", "attached": false, "elapsed_sec": 39.125}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B2", "attached": false, "elapsed_sec": 39.2970000000023}
+{"stage": "WAIT", "label": "返回观察位，等待下一箱", "box_id": "B2", "attached": false, "elapsed_sec": 39.36000000000058}
+{"stage": "VERIFY_RESULT", "box_id": "B2", "position_error_m": 2.116804225096674e-06, "rotation_error_rad": 9.438533832254021e-07}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B8", "attached": false, "elapsed_sec": 39.4220000000023}
+{"stage": "SPAWN", "label": "生成箱子", "box_id": "B8", "attached": false, "elapsed_sec": 39.45300000000134, "input_index": 7, "pose_world": [-4.3495546573790735e-06, 1.1999999999921167, 0.125, 0.0, 0.0, 0.7071093785300145, 0.7071041838335399]}
+{"stage": "OBSERVE", "label": "抬高观察箱子", "box_id": "B8", "attached": false, "elapsed_sec": 39.53099999999904}
+{"stage": "APPROACH", "label": "接近箱子", "box_id": "B8", "attached": false, "elapsed_sec": 39.6720000000023}
+{"stage": "PICK", "label": "抓取接触", "box_id": "B8", "attached": false, "elapsed_sec": 39.78099999999904}
+{"stage": "ATTACH", "label": "吸附（运动学约束）", "box_id": "B8", "attached": true, "elapsed_sec": 39.82800000000134}
+{"stage": "LIFT", "label": "抬起", "box_id": "B8", "attached": true, "elapsed_sec": 39.89099999999962}
+{"stage": "CARRY", "label": "搬运", "box_id": "B8", "attached": true, "elapsed_sec": 39.93800000000192}
+{"stage": "PLACE", "label": "下降放置", "box_id": "B8", "attached": true, "elapsed_sec": 40.64099999999962}
+{"stage": "RELEASE", "label": "释放", "box_id": "B8", "attached": true, "elapsed_sec": 40.76599999999962}
+{"stage": "RETREAT", "label": "退回", "box_id": "B8", "attached": false, "elapsed_sec": 40.86000000000058}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B8", "attached": false, "elapsed_sec": 40.96900000000096}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B8", "attached": false, "elapsed_sec": 41.53099999999904}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B8", "attached": false, "elapsed_sec": 41.68800000000192}
+{"stage": "WAIT", "label": "返回观察位，等待下一箱", "box_id": "B8", "attached": false, "elapsed_sec": 41.73500000000058}
+{"stage": "VERIFY_RESULT", "box_id": "B8", "position_error_m": 2.400521107387813e-06, "rotation_error_rad": 7.161674297315891e-07}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B5", "attached": false, "elapsed_sec": 41.7970000000023}
+{"stage": "SPAWN", "label": "生成箱子", "box_id": "B5", "attached": false, "elapsed_sec": 41.82800000000134, "input_index": 4, "pose_world": [-4.3495546573790735e-06, 1.1999999999921167, 0.125, 0.0, 0.0, 0.7071093785300145, 0.7071041838335399]}
+{"stage": "OBSERVE", "label": "抬高观察箱子", "box_id": "B5", "attached": false, "elapsed_sec": 41.89099999999962}
+{"stage": "APPROACH", "label": "接近箱子", "box_id": "B5", "attached": false, "elapsed_sec": 42.01599999999962}
+{"stage": "PICK", "label": "抓取接触", "box_id": "B5", "attached": false, "elapsed_sec": 42.1720000000023}
+{"stage": "ATTACH", "label": "吸附（运动学约束）", "box_id": "B5", "attached": true, "elapsed_sec": 42.21900000000096}
+{"stage": "LIFT", "label": "抬起", "box_id": "B5", "attached": true, "elapsed_sec": 42.28099999999904}
+{"stage": "CARRY", "label": "搬运", "box_id": "B5", "attached": true, "elapsed_sec": 42.32800000000134}
+{"stage": "PLACE", "label": "下降放置", "box_id": "B5", "attached": true, "elapsed_sec": 42.95300000000134}
+{"stage": "RELEASE", "label": "释放", "box_id": "B5", "attached": true, "elapsed_sec": 43.0}
+{"stage": "RETREAT", "label": "退回", "box_id": "B5", "attached": false, "elapsed_sec": 43.11000000000058}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B5", "attached": false, "elapsed_sec": 43.1720000000023}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B5", "attached": false, "elapsed_sec": 43.61000000000058}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B5", "attached": false, "elapsed_sec": 43.75}
+{"stage": "WAIT", "label": "返回观察位，等待下一箱", "box_id": "B5", "attached": false, "elapsed_sec": 43.81300000000192}
+{"stage": "VERIFY_RESULT", "box_id": "B5", "position_error_m": 2.1696418193818684e-06, "rotation_error_rad": 4.6660999467249974e-07}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B1", "attached": false, "elapsed_sec": 43.9220000000023}
+{"stage": "SPAWN", "label": "生成箱子", "box_id": "B1", "attached": false, "elapsed_sec": 43.93800000000192, "input_index": 0, "pose_world": [-4.3495546573790735e-06, 1.1999999999921167, 0.15, 0.0, 0.0, 0.7071093785300145, 0.7071041838335399]}
+{"stage": "OBSERVE", "label": "抬高观察箱子", "box_id": "B1", "attached": false, "elapsed_sec": 44.0}
+{"stage": "APPROACH", "label": "接近箱子", "box_id": "B1", "attached": false, "elapsed_sec": 44.11000000000058}
+{"stage": "PICK", "label": "抓取接触", "box_id": "B1", "attached": false, "elapsed_sec": 46.31300000000192}
+{"stage": "ATTACH", "label": "吸附（运动学约束）", "box_id": "B1", "attached": true, "elapsed_sec": 46.95300000000134}
+{"stage": "LIFT", "label": "抬起", "box_id": "B1", "attached": true, "elapsed_sec": 47.0}
+{"stage": "CARRY", "label": "搬运", "box_id": "B1", "attached": true, "elapsed_sec": 47.53099999999904}
+{"stage": "PLACE", "label": "下降放置", "box_id": "B1", "attached": true, "elapsed_sec": 48.125}
+{"stage": "RELEASE", "label": "释放", "box_id": "B1", "attached": true, "elapsed_sec": 48.1720000000023}
+{"stage": "RETREAT", "label": "退回", "box_id": "B1", "attached": false, "elapsed_sec": 48.25}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B1", "attached": false, "elapsed_sec": 48.2970000000023}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B1", "attached": false, "elapsed_sec": 48.70300000000134}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B1", "attached": false, "elapsed_sec": 48.875}
+{"stage": "WAIT", "label": "返回观察位，等待下一箱", "box_id": "B1", "attached": false, "elapsed_sec": 48.9220000000023}
+{"stage": "VERIFY_RESULT", "box_id": "B1", "position_error_m": 9.199450871401366e-05, "rotation_error_rad": 1.8545376823801976e-06}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B10", "attached": false, "elapsed_sec": 48.96900000000096}
+{"stage": "SPAWN", "label": "生成箱子", "box_id": "B10", "attached": false, "elapsed_sec": 49.0, "input_index": 9, "pose_world": [-4.3495546573790735e-06, 1.1999999999921167, 0.125, 0.0, 0.0, 0.7071093785300145, 0.7071041838335399]}
+{"stage": "OBSERVE", "label": "抬高观察箱子", "box_id": "B10", "attached": false, "elapsed_sec": 49.06300000000192}
+{"stage": "APPROACH", "label": "接近箱子", "box_id": "B10", "attached": false, "elapsed_sec": 49.21900000000096}
+{"stage": "PICK", "label": "抓取接触", "box_id": "B10", "attached": false, "elapsed_sec": 49.34400000000096}
+{"stage": "ATTACH", "label": "吸附（运动学约束）", "box_id": "B10", "attached": true, "elapsed_sec": 49.375}
+{"stage": "LIFT", "label": "抬起", "box_id": "B10", "attached": true, "elapsed_sec": 49.4220000000023}
+{"stage": "CARRY", "label": "搬运", "box_id": "B10", "attached": true, "elapsed_sec": 49.48500000000058}
+{"stage": "PLACE", "label": "下降放置", "box_id": "B10", "attached": true, "elapsed_sec": 50.26599999999962}
+{"stage": "RELEASE", "label": "释放", "box_id": "B10", "attached": true, "elapsed_sec": 50.34400000000096}
+{"stage": "RETREAT", "label": "退回", "box_id": "B10", "attached": false, "elapsed_sec": 50.4220000000023}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B10", "attached": false, "elapsed_sec": 50.5}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B10", "attached": false, "elapsed_sec": 50.98500000000058}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B10", "attached": false, "elapsed_sec": 51.14099999999962}
+{"stage": "WAIT", "label": "返回观察位，等待下一箱", "box_id": "B10", "attached": false, "elapsed_sec": 51.18800000000192}
+{"stage": "VERIFY_RESULT", "box_id": "B10", "position_error_m": 2.367175035752128e-06, "rotation_error_rad": 1.4180570263873933e-06}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B9", "attached": false, "elapsed_sec": 51.25}
+{"stage": "SPAWN", "label": "生成箱子", "box_id": "B9", "attached": false, "elapsed_sec": 51.28099999999904, "input_index": 8, "pose_world": [-4.3495546573790735e-06, 1.1999999999921167, 0.125, 0.0, 0.0, 0.7071093785300145, 0.7071041838335399]}
+{"stage": "OBSERVE", "label": "抬高观察箱子", "box_id": "B9", "attached": false, "elapsed_sec": 51.375}
+{"stage": "APPROACH", "label": "接近箱子", "box_id": "B9", "attached": false, "elapsed_sec": 51.5}
+{"stage": "PICK", "label": "抓取接触", "box_id": "B9", "attached": false, "elapsed_sec": 51.625}
+{"stage": "ATTACH", "label": "吸附（运动学约束）", "box_id": "B9", "attached": true, "elapsed_sec": 51.65599999999904}
+{"stage": "LIFT", "label": "抬起", "box_id": "B9", "attached": true, "elapsed_sec": 51.68800000000192}
+{"stage": "CARRY", "label": "搬运", "box_id": "B9", "attached": true, "elapsed_sec": 51.75}
+{"stage": "PLACE", "label": "下降放置", "box_id": "B9", "attached": true, "elapsed_sec": 52.375}
+{"stage": "RELEASE", "label": "释放", "box_id": "B9", "attached": true, "elapsed_sec": 52.4220000000023}
+{"stage": "RETREAT", "label": "退回", "box_id": "B9", "attached": false, "elapsed_sec": 52.48500000000058}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B9", "attached": false, "elapsed_sec": 52.53099999999904}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B9", "attached": false, "elapsed_sec": 53.03099999999904}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B9", "attached": false, "elapsed_sec": 53.18800000000192}
+{"stage": "WAIT", "label": "返回观察位，等待下一箱", "box_id": "B9", "attached": false, "elapsed_sec": 53.23500000000058}
+{"stage": "VERIFY_RESULT", "box_id": "B9", "position_error_m": 2.3215224855125484e-06, "rotation_error_rad": 2.65936236490782e-07}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B7", "attached": false, "elapsed_sec": 53.2970000000023}
+{"stage": "SPAWN", "label": "生成箱子", "box_id": "B7", "attached": false, "elapsed_sec": 53.31300000000192, "input_index": 6, "pose_world": [-4.3495546573790735e-06, 1.1999999999921167, 0.125, 0.0, 0.0, 0.7071093785300145, 0.7071041838335399]}
+{"stage": "OBSERVE", "label": "抬高观察箱子", "box_id": "B7", "attached": false, "elapsed_sec": 53.40599999999904}
+{"stage": "APPROACH", "label": "接近箱子", "box_id": "B7", "attached": false, "elapsed_sec": 53.51599999999962}
+{"stage": "PICK", "label": "抓取接触", "box_id": "B7", "attached": false, "elapsed_sec": 53.64099999999962}
+{"stage": "ATTACH", "label": "吸附（运动学约束）", "box_id": "B7", "attached": true, "elapsed_sec": 53.68800000000192}
+{"stage": "LIFT", "label": "抬起", "box_id": "B7", "attached": true, "elapsed_sec": 53.73500000000058}
+{"stage": "CARRY", "label": "搬运", "box_id": "B7", "attached": true, "elapsed_sec": 53.78099999999904}
+{"stage": "PLACE", "label": "下降放置", "box_id": "B7", "attached": true, "elapsed_sec": 54.65599999999904}
+{"stage": "RELEASE", "label": "释放", "box_id": "B7", "attached": true, "elapsed_sec": 54.68800000000192}
+{"stage": "RETREAT", "label": "退回", "box_id": "B7", "attached": false, "elapsed_sec": 54.75}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B7", "attached": false, "elapsed_sec": 54.78099999999904}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B7", "attached": false, "elapsed_sec": 55.32800000000134}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B7", "attached": false, "elapsed_sec": 55.48500000000058}
+{"stage": "WAIT", "label": "返回观察位，等待下一箱", "box_id": "B7", "attached": false, "elapsed_sec": 55.53099999999904}
+{"stage": "VERIFY_RESULT", "box_id": "B7", "position_error_m": 2.0632593549097747e-06, "rotation_error_rad": 5.552109513526981e-07}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B4", "attached": false, "elapsed_sec": 55.59400000000096}
+{"stage": "SPAWN", "label": "生成箱子", "box_id": "B4", "attached": false, "elapsed_sec": 55.61000000000058, "input_index": 3, "pose_world": [-4.3495546573790735e-06, 1.1999999999921167, 0.125, 0.0, 0.0, 0.7071093785300145, 0.7071041838335399]}
+{"stage": "OBSERVE", "label": "抬高观察箱子", "box_id": "B4", "attached": false, "elapsed_sec": 55.6720000000023}
+{"stage": "APPROACH", "label": "接近箱子", "box_id": "B4", "attached": false, "elapsed_sec": 55.7970000000023}
+{"stage": "PICK", "label": "抓取接触", "box_id": "B4", "attached": false, "elapsed_sec": 55.93800000000192}
+{"stage": "ATTACH", "label": "吸附（运动学约束）", "box_id": "B4", "attached": true, "elapsed_sec": 55.98500000000058}
+{"stage": "LIFT", "label": "抬起", "box_id": "B4", "attached": true, "elapsed_sec": 56.01599999999962}
+{"stage": "CARRY", "label": "搬运", "box_id": "B4", "attached": true, "elapsed_sec": 56.07800000000134}
+{"stage": "PLACE", "label": "下降放置", "box_id": "B4", "attached": true, "elapsed_sec": 56.75}
+{"stage": "RELEASE", "label": "释放", "box_id": "B4", "attached": true, "elapsed_sec": 56.7970000000023}
+{"stage": "RETREAT", "label": "退回", "box_id": "B4", "attached": false, "elapsed_sec": 56.875}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B4", "attached": false, "elapsed_sec": 56.90599999999904}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B4", "attached": false, "elapsed_sec": 57.36000000000058}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B4", "attached": false, "elapsed_sec": 57.53099999999904}
+{"stage": "WAIT", "label": "返回观察位，等待下一箱", "box_id": "B4", "attached": false, "elapsed_sec": 57.57800000000134}
+{"stage": "VERIFY_RESULT", "box_id": "B4", "position_error_m": 2.198918669902887e-06, "rotation_error_rad": 6.125946750948363e-07}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B6", "attached": false, "elapsed_sec": 57.625}
+{"stage": "SPAWN", "label": "生成箱子", "box_id": "B6", "attached": false, "elapsed_sec": 57.65599999999904, "input_index": 5, "pose_world": [-4.3495546573790735e-06, 1.1999999999921167, 0.125, 0.0, 0.0, 0.7071093785300145, 0.7071041838335399]}
+{"stage": "OBSERVE", "label": "抬高观察箱子", "box_id": "B6", "attached": false, "elapsed_sec": 57.68800000000192}
+{"stage": "APPROACH", "label": "接近箱子", "box_id": "B6", "attached": false, "elapsed_sec": 57.7970000000023}
+{"stage": "PICK", "label": "抓取接触", "box_id": "B6", "attached": false, "elapsed_sec": 57.93800000000192}
+{"stage": "ATTACH", "label": "吸附（运动学约束）", "box_id": "B6", "attached": true, "elapsed_sec": 57.98500000000058}
+{"stage": "LIFT", "label": "抬起", "box_id": "B6", "attached": true, "elapsed_sec": 58.03099999999904}
+{"stage": "CARRY", "label": "搬运", "box_id": "B6", "attached": true, "elapsed_sec": 58.07800000000134}
+{"stage": "PLACE", "label": "下降放置", "box_id": "B6", "attached": true, "elapsed_sec": 58.64099999999962}
+{"stage": "RELEASE", "label": "释放", "box_id": "B6", "attached": true, "elapsed_sec": 58.73500000000058}
+{"stage": "RETREAT", "label": "退回", "box_id": "B6", "attached": false, "elapsed_sec": 58.7970000000023}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B6", "attached": false, "elapsed_sec": 58.90599999999904}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B6", "attached": false, "elapsed_sec": 59.1720000000023}
+{"stage": "RETURN", "label": "空手返回供料位", "box_id": "B6", "attached": false, "elapsed_sec": 59.31300000000192}
+{"stage": "WAIT", "label": "返回观察位，等待下一箱", "box_id": "B6", "attached": false, "elapsed_sec": 59.375}
+{"stage": "VERIFY_RESULT", "box_id": "B6", "position_error_m": 2.1499024387444773e-06, "rotation_error_rad": 5.608893366726236e-07}
+{"stage": "COMPLETE", "label": "完成", "box_id": "B6", "attached": false, "elapsed_sec": 59.4220000000023, "placed": 10}

@@ -1,0 +1,247 @@
+"""Collision-checked ground connector spliced onto unchanged recorded motions."""
+import copy
+import json
+from pathlib import Path
+import shutil
+from types import SimpleNamespace
+
+import newton
+import numpy as np
+from scipy.spatial.transform import Rotation
+import yaml
+from demo_contract import write_json, freeze_bundle, check_bundle
+from demo_recording import validate_recording
+from demo_trajectory import MotionCompiler
+from demo_workspace import CertifiedWorkspace
+from joint_approach_path import plan_joint_approach, nearest_revolute_solution
+from run_pick_place_pipeline import Pipeline, STAGE_NAMES
+from online_packing_real import Hull
+from roboticarm_newton import DEFAULT_SOURCE
+from verify_pick_place_run import verify
+
+
+class BridgeCompiler(MotionCompiler):
+    checking = False
+    validate_motion = True
+
+    def solve(self, point, yaw):
+        if self.validate_motion:
+            return super().solve(point, yaw)
+        ok, joints = self.ik.solve_world_pose(point, yaw, check_collision=False)
+        if not ok or joints is None:
+            raise RuntimeError(f"Animation IK could not reach {self.stage}: {point}")
+        joints = nearest_revolute_solution(joints, self.q,
+            self.model.joint_limit_lower.numpy()[:6], self.model.joint_limit_upper.numpy()[:6])
+        self.ik.q_last = joints.astype(np.float32)
+        return joints
+
+    def refresh(self, joints):
+        """FK and visible cargo state for a planning probe, without recording it."""
+        self.state.joint_q.assign(joints)
+        newton.eval_fk(self.model, self.state.joint_q, self.state.joint_qd, self.state)
+        bodies = self.state.body_q.numpy()
+        for body in self.body_ids.values():
+            bodies[body] = [100, 100, 100, 0, 0, 0, 1]
+        for name, pose in self.placed.items():
+            bodies[self.body_ids[name]] = pose
+        if self.box_pose is not None:
+            pose = self.box_pose
+            if self.attached:
+                tool = bodies[self.contact_body]
+                rot = Rotation.from_quat(tool[3:])
+                pose = np.r_[tool[:3] + rot.apply(self.grasp_xyz), (rot * self.grasp_rotation).as_quat()]
+            bodies[self.body_ids[self.box_id]] = pose
+        self.state.body_q.assign(bodies)
+
+    def valid(self, joints):
+        lower, upper = self.model.joint_limit_lower.numpy()[:6], self.model.joint_limit_upper.numpy()[:6]
+        if not np.isfinite(joints).all() or np.any(joints < lower) or np.any(joints > upper):
+            return False
+        self.ik.model.joint_q.assign(joints)
+        newton.eval_fk(self.ik.model, self.ik.model.joint_q, self.ik.model.joint_qd, self.ik.model)
+        if not self.ik._collision_free():
+            return False
+        self.refresh(joints)
+        return not self.payload_contact_failures()
+
+    def frame(self):
+        if not self.validate_motion:
+            Pipeline.frame(self)
+            self.body_frames.append(self.state.body_q.numpy().copy())
+            return
+        super().frame()
+        if self.checking:
+            if self.box_pose is None and self.placed:
+                self.check_payload_contacts()
+            if not self.valid(self.q):
+                write_json(self.output / "failure_frame.json", dict(stage=self.stage, box_id=self.box_id,
+                    frame=len(self.history)-1, q=self.q.tolist(), static=self.ik.last_collision_pairs,
+                    payload=self.payload_contact_failures()))
+                raise RuntimeError(f"collision in {self.stage} for {self.box_id}")
+
+    def joint_path(self, start, goal, label):
+        self.enter(label)
+        path = ([np.asarray(start), np.asarray(goal)] if not self.validate_motion else
+                plan_joint_approach(start, goal, self.model.joint_limit_lower.numpy()[:6],
+                                  self.model.joint_limit_upper.numpy()[:6], self.valid,
+                                  resolution=.035, max_seconds=60))
+        self.q = np.asarray(start).copy()
+        for first, last in zip(path, path[1:]):
+            count = max(12, int(np.ceil(np.max(np.abs(last-first))/.018)))
+            for alpha in np.linspace(0, 1, count+1)[1:]:
+                self.q = first + (alpha*alpha*(3-2*alpha))*(last-first)
+                self.frame()
+        return [p.tolist() for p in path]
+
+    def reference_frame(self, data, index):
+        """Reuse original joints exactly; retain the actual new rigid grasp."""
+        stage = str(data["stage"][index])
+        if stage != self.stage:
+            self.enter(stage)
+        self.q = data["joint_q"][index].copy()
+        self.attached = bool(data["attached"][index])
+        if stage == "RELEASE":
+            self.placed[self.box_id] = self.box_pose.copy()
+        if self.validate_motion:
+            if not self.valid(self.q):
+                raise RuntimeError(f"recorded motion contact at frame {index}")
+        else:
+            self.refresh(self.q)
+        bodies = self.state.body_q.numpy()
+        self.box_pose = bodies[self.body_ids[self.box_id]].copy()
+        if self.validate_motion:
+            self.check_payload_contacts()
+        self.history.append((self.q.copy(), bodies[self.contact_body].copy(), self.box_pose.copy(),
+                             stage, self.box_id, self.attached))
+        self.body_frames.append(bodies.copy())
+
+
+def prepare_bridge(base_folder, output, feeder_xy, *, validate=True, observe_at_base=False):
+    base_folder, output = Path(base_folder), Path(output)
+    source_plan = (check_bundle(base_folder) if validate else
+                   json.loads((base_folder/"plan.json").read_text(encoding="utf-8")))
+    output.mkdir(parents=True, exist_ok=False)
+    for name in ("input.json", "domain.json", "scene_tf.yaml", "model_manifest.json"):
+        shutil.copyfile(base_folder/name, output/name)
+    manifest = json.loads((output/"input.json").read_text(encoding="utf-8"))
+    scene = output/"scene_tf.yaml"
+    hull = Hull.from_config(yaml.safe_load(scene.read_text(encoding="utf-8")))
+    plan = copy.deepcopy(source_plan)
+    plan.pop("feeder_center_container_door_floor_m", None)
+    plan["feeder"] = dict(frame="elfin_base", xy_m=list(feeder_xy), bottom_world_z_m=0)
+    write_json(output/"plan.json", plan)
+    run = BridgeCompiler(output)
+    run.validate_motion = validate
+    STAGE_NAMES.update(OBSERVE="抬高观察箱子", WAIT="返回观察位，等待下一箱")
+    bridges, copied_frames = [], 0
+    try:
+        run.initialize(manifest["boxes"], hull,
+                       SimpleNamespace(source_root=DEFAULT_SOURCE, scene_config=scene, device="cuda:0"))
+        if validate:
+            run.ik = CertifiedWorkspace(DEFAULT_SOURCE, scene, device="cuda:0",
+                                       box_size=manifest["boxes"][0], trace=run.trace)
+        run.checking = validate
+        base = run.ik.model.body_q.numpy()[run.ik.base_body]
+        xy = (base[:3]+Rotation.from_quat(base[3:]).apply([*feeder_xy, 0]))[:2]
+        observation_z = float(base[2])
+        plan["observation"] = dict(tool_contact_world_z_m=observation_z,
+                                   feeder_world_xy_m=xy.tolist())
+        with np.load(base_folder/"trajectory.npz") as data:
+            for number, row in enumerate(plan["sequence"]):
+                run.box_id, run.box_pose, run.attached = row["id"], None, False
+                indices = np.flatnonzero(data["box_id"] == row["id"])
+                start = int(indices[data["stage"][indices] == "CARRY"][0])
+                end = int(indices[data["stage"][indices] == "VERIFY"][0])
+                dock_q = data["joint_q"][start].copy()
+                dock_box, dock_tool = data["box_pose"][start], data["tool_pose"][start]
+                inv = Rotation.from_quat(dock_tool[3:]).inv()
+                run.grasp_xyz = inv.apply(dock_box[:3]-dock_tool[:3])
+                run.grasp_rotation = inv*Rotation.from_quat(dock_box[3:])
+                height = row["placed_dims_m"][2]
+                yaw = float(np.arctan2(2*row["orientation_world_xyzw"][2]*row["orientation_world_xyzw"][3],
+                                      1-2*row["orientation_world_xyzw"][2]**2))
+                pickup = np.array([*xy, height/2])
+                contact = np.array([*xy, height])
+                hover = contact+[0, 0, .12]
+                observation = np.array([*xy, observation_z]) if observe_at_base else hover
+                previous_q = run.q.copy()
+                run.q = dock_q.copy()
+                run.ik.q_last = dock_q.astype(np.float32)
+                run.stage = "RETURN"
+                hover_q = run.solve(hover, yaw)
+                observation_q = run.solve(observation, yaw) if observe_at_base else hover_q
+                if number == 0:
+                    run.q = observation_q
+                    run.enter("RESET_HOME")
+                    run.frame()
+                else:
+                    run.q = previous_q
+                    run.joint_path(previous_q, observation_q, "RETURN")
+                run.box_pose = np.r_[pickup, row["orientation_world_xyzw"]]
+                row["spawn_position_world_m"] = pickup.tolist()
+                row["spawn_bottom_world_z_m"] = 0
+                row.pop("spawn_center_container_door_floor_m", None)
+                run.enter("SPAWN", input_index=row["input_index"], pose_world=run.box_pose.tolist())
+                run.hold(30)
+                if observe_at_base:
+                    run.enter("OBSERVE")
+                    run.hold(60)
+                run.enter("APPROACH")
+                run.move(contact+[0,0,.08], yaw)
+                run.enter("PICK")
+                run.move(contact, yaw)
+                tool = run.state.body_q.numpy()[run.contact_body]
+                inv = Rotation.from_quat(tool[3:]).inv()
+                run.grasp_xyz = inv.apply(run.box_pose[:3]-tool[:3])
+                run.grasp_rotation = inv*Rotation.from_quat(run.box_pose[3:])
+                run.attached = True
+                run.enter("ATTACH")
+                run.hold()
+                run.enter("LIFT")
+                run.move(hover, yaw)
+                connector = run.joint_path(run.q.copy(), dock_q, "CARRY")
+                if validate and np.linalg.norm(run.box_pose[:3]-dock_box[:3]) > .006:
+                    raise RuntimeError("connector does not match original feeder")
+                first_output_frame = len(run.history)
+                for index in range(start, end):
+                    run.reference_frame(data, index)
+                    copied_frames += 1
+                empty_return = run.joint_path(run.q.copy(), hover_q, "RETURN")
+                if observe_at_base:
+                    run.joint_path(run.q.copy(), observation_q, "RETURN")
+                run.enter("VERIFY" if validate else "WAIT")
+                error = float(np.linalg.norm(run.box_pose[:3]-row["position_world_m"]))
+                angle = float((Rotation.from_quat(run.box_pose[3:]).inv()*
+                               Rotation.from_quat(row["orientation_world_xyzw"])).magnitude())
+                run.events.write(json.dumps(dict(stage="VERIFY_RESULT", box_id=row["id"],
+                    position_error_m=error, rotation_error_rad=angle))+"\n")
+                run.events.flush()
+                run.hold()
+                bridges.append(dict(id=row["id"], carry_joint_path=connector,
+                    empty_return_joint_path=empty_return, original_frame_range=[start,end]))
+                bridges[-1]["reused_output_frame_range"] = [first_output_frame, first_output_frame+end-start]
+                write_json(output/"bridges.json", bridges)
+                write_json(output/"plan.json", plan)
+        run.enter("COMPLETE", placed=len(bridges))
+        write_json(output/"result.json", dict(success=True, placed=len(bridges)))
+    except BaseException as exc:
+        write_json(output/"result.json", dict(success=False, failed_stage=run.stage,
+                   box_id=run.box_id, error=str(exc)))
+        raise
+    finally:
+        run.close()
+    if not validate:
+        write_json(output/"MOTION_READY.json", dict(boxes=len(bridges), feeder_base_xy_m=list(feeder_xy),
+                   observation_world_z_m=observation_z, ground_world_z_m=0,
+                   collision_validation="not_run", trajectory_audit="not_run"))
+        return dict(boxes=len(bridges), motion_validation="not_run")
+    validation = verify(output)
+    with np.load(output/"trajectory.npz") as recording:
+        validation["scene_recording"] = validate_recording(plan["sequence"], recording)
+    validation.update(copied_original_frames=copied_frames,
+                      payload_checked_frames=run.payload_checked_frames,
+                      penetration_tolerance_m=run.contact_tolerance_m,
+                      original_joint_motion_replayed_exactly=True)
+    write_json(output/"validation.json", validation)
+    freeze_bundle(output)
+    return validation

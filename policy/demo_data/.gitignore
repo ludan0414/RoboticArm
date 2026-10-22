@@ -1,0 +1,13 @@
+# Publish only the current ten-box recordings and reproducible input fixtures.
+/*
+!/.gitignore
+!/inputs/
+!/greedy10/
+!/ground_greedy10_observe/
+
+# Run-local diagnostics stay on disk, outside the published demo payload.
+**/boundary.jsonl
+**/offline_boundary.jsonl
+**/last_state.npz
+**/status.json
+**/replay_result.json

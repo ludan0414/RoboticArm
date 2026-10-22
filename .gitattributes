@@ -1,0 +1,2 @@
+# Frozen recordings hash the exact JSON/YAML bytes; do not rewrite line endings.
+policy/demo_data/** -text

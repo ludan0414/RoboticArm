@@ -1,0 +1,11 @@
+{
+  "boxes": 10,
+  "feeder_base_xy_m": [
+    1.2,
+    0.0
+  ],
+  "observation_world_z_m": 0.8600000143051147,
+  "ground_world_z_m": 0,
+  "collision_validation": "not_run",
+  "trajectory_audit": "not_run"
+}
