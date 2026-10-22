@@ -12,6 +12,7 @@ import numpy as np
 import yaml
 from scipy.spatial.transform import Rotation
 from demo_contract import check_bundle
+from demo_pose_sampling import sample_pose_indices
 
 
 def pose_dict(pose):
@@ -31,16 +32,7 @@ def sample_poses(poses):
     The resulting Cartesian chords are checked again by live PlanMotion;
     sampling a demo is not a collision certificate for those chords.
     """
-    selected = [poses[0]]
-    for pose in poses[1:]:
-        previous = selected[-1]
-        dot = abs(float(np.dot(pose[3:], previous[3:])))
-        angle = 2 * np.arccos(np.clip(dot, 0, 1))
-        if np.linalg.norm(pose[:3] - previous[:3]) >= .04 or angle >= .06:
-            selected.append(pose)
-    if not np.array_equal(selected[-1], poses[-1]):
-        selected.append(poses[-1])
-    return [pose_dict(pose) for pose in selected]
+    return [pose_dict(poses[index]) for index in sample_pose_indices(poses)]
 
 
 def export_profile(bundle):

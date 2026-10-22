@@ -1,4 +1,4 @@
-"""ROS-free joint travel diagnostics; thresholds may be advisory."""
+"""ROS-free joint travel diagnostics; reference values never reject motion."""
 _CARTESIAN_EXCURSION_RAD_PER_M = 3.0
 _CARTESIAN_EXCURSION_MIN_PATH_M = .05
 JOINTS = ['elfin_joint%d' % i for i in range(1, 7)]
@@ -29,10 +29,10 @@ def cartesian_excursion(joint_names, points, path_len_m,
 
 
 def excursion_diagnostic(joint_names, points, path_len_m, configured_limit):
-    """Zero disables rejection, while retaining the original warning metric."""
+    """Legacy configured limit is a warning reference only, including >0."""
     measured = cartesian_excursion(joint_names, points, path_len_m,
         limit_rad_per_m=configured_limit if configured_limit > 0 else _CARTESIAN_EXCURSION_RAD_PER_M)
     if measured is not None:
-        measured['enforced'] = configured_limit > 0
-        measured['reject'] = measured['enforced'] and not measured['ok']
+        measured['enforced'] = False
+        measured['reject'] = False
     return measured

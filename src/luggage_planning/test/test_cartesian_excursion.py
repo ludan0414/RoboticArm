@@ -48,7 +48,7 @@ class TestCartesianExcursion(unittest.TestCase):
         self.assertEqual(advisory['rad_per_m'],3.104)
         self.assertFalse(advisory['reject'])
         self.assertFalse(advisory['enforced'])
-        self.assertTrue(excursion_diagnostic([],points,.1,3)['reject'])
+        self.assertFalse(excursion_diagnostic([],points,.1,3)['reject'])
 
     @classmethod
     def setUpClass(cls):

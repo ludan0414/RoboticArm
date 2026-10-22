@@ -121,7 +121,8 @@ python policy/export_hardware_loading_profile.py \
 模板设 `enforce_segment_heuristics=false`，旧 profile 没有该字段时也默认只告警。
 初始化和最终归位交给 MoveIt 自由空间规划，不再用 TCP 直线距离上限拦停。
 原 45° 单段关节转幅限制已在真机 launch 中关闭（`max_segment_joint_excursion_rad=0`）；
-原 `3 rad/m` 笛卡尔转动比限制也只记录诊断/告警（`cartesian_excursion_rad_per_m=0`），不会因 `3.104 > 3` 中断。
+原 `3 rad/m` 笛卡尔转动比拒绝分支已经删除，只记录诊断/告警；
+即使旧 launch 仍传 `cartesian_excursion_rad_per_m=3`，更新后的执行器也不会因比值超出而中断。
 这两项需要重新构建并重启笔记本 L1，运行中的 executor 不会因 `ros2 param set` 自动重建。
 工具 TF 仍必须为最近 2s 数据。MoveIt 机械限位、碰撞、腕部翻转检查、失吸停机和释放确认保留；
 硬件 launch 的速度/加速度比例降至 15%/10%。这些限制不替代现场方向观察和实体急停。

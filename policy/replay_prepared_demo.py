@@ -5,7 +5,7 @@ from pathlib import Path
 import time
 
 import numpy as np
-from demo_contract import check_bundle, digest, recorded_urdf_digest, text_digest_matches
+from demo_contract import check_bundle, digest, recorded_urdf_digest, text_digest_matches, write_json
 from container_demo import make_ground_grid
 import newton
 import warp as wp
@@ -14,7 +14,8 @@ from roboticarm_newton import DEFAULT_SOURCE, make_robot_urdf, scene_paths
 
 
 def replay(folder, *, source_root=DEFAULT_SOURCE, headless=False, fps=30, device="cuda:0",
-           unvalidated_preview=False, manual_pick=False, allow_partial=False):
+           unvalidated_preview=False, manual_pick=False, allow_partial=False,
+           show_excursion=False, excursion_report=None):
     if manual_pick and headless:
         raise ValueError("manual pick needs the visual window")
     folder, source_root = Path(folder), Path(source_root).resolve()
@@ -54,15 +55,24 @@ def replay(folder, *, source_root=DEFAULT_SOURCE, headless=False, fps=30, device
             raise ValueError("body order mismatch")
         if len(data["body_q"]) != len(data["stage"]) or not np.isfinite(data["body_q"]).all():
             raise ValueError("invalid recorded body poses")
+        metrics = None
+        if show_excursion or excursion_report is not None:
+            from demo_excursion import ExcursionDisplay
+            metrics = ExcursionDisplay(data)
+            print('SIM excursion: ' + json.dumps(metrics.summary), flush=True)
+            if excursion_report is not None:
+                write_json(Path(excursion_report), metrics.report())
         if not headless:
             import newton.viewer
             viewer = newton.viewer.ViewerGL(width=1280, height=800)
             viewer.set_model(model)
-            viewer.show_ui = manual_pick
+            viewer.show_ui = manual_pick or show_excursion
             if gate:
                 if viewer.gui is None:
                     raise RuntimeError("Start Pick button requires Newton ImGui support")
                 viewer.register_ui_callback(gate.render, position="free")
+            if show_excursion:
+                viewer.register_ui_callback(metrics.render, position="free")
             viewer.set_camera(pos=wp.vec3(3.7, -5.8, 3.2), pitch=-12, yaw=136)
         grid = make_ground_grid(z=.003)
         title_prefix = "Newton PREVIEW (unvalidated) | " if unvalidated_preview else "Newton greedy demo | "
@@ -71,6 +81,8 @@ def replay(folder, *, source_root=DEFAULT_SOURCE, headless=False, fps=30, device
         try:
             while frame < len(data["stage"]):
                 started = time.monotonic()
+                if metrics:
+                    metrics.frame = frame
                 if viewer and not viewer.is_running():
                     if unvalidated_preview:
                         return dict(success=True, stage="PREVIEW_CLOSED", spawned=spawned,
@@ -144,8 +156,11 @@ if __name__ == "__main__":
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--allow-partial", action="store_true", help="explicitly replay a checked subset")
     parser.add_argument("--manual-pick", action="store_true")
+    parser.add_argument("--show-excursion", action="store_true", help="show synchronized SIM rad/m diagnostics")
+    parser.add_argument("--excursion-report", type=Path)
     args = parser.parse_args()
     if args.fps <= 0:
         parser.error("fps must be positive")
     replay(args.bundle, headless=args.headless, fps=args.fps, device=args.device,
-           allow_partial=args.allow_partial, manual_pick=args.manual_pick)
+           allow_partial=args.allow_partial, manual_pick=args.manual_pick,
+           show_excursion=args.show_excursion, excursion_report=args.excursion_report)

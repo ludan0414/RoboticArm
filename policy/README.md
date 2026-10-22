@@ -14,6 +14,20 @@ python replay_prepared_demo.py --bundle demo_data/site55_right160_one --allow-pa
 真机重新规划工具/箱体位姿，不播放这份仿真关节数组，仿真检查也不等于真机轨迹已验证。
 下面保留的十箱包和入口仍可单独回放。
 
+查看与真机共用算法的关节转动/工具距离诊断：
+
+```powershell
+python replay_prepared_demo.py --bundle demo_data/site55_right160_one --allow-partial --manual-pick --show-excursion
+```
+
+窗口同步显示当前段关节、累计转角、TCP 弦长、`rad/m` 和整条回放峰值。
+计算为 `max_j(sum(abs(diff(q_j)))) / max(TCP路径长度, 0.05m)`，使用原始关节角，不做周期折返。
+CARRY 的目标采样边界与真机 profile 导出一致；其余阶段是工具位姿诊断小段。
+Newton 使用已录制的关节路径，真实 MoveIt 解可能不同，因此数值不承诺与真机完全相同。
+当前单箱 188 个诊断段中 4 段超过3、2段超过4，峰值4.641；搬运峰值4.417。
+转姿和短位移会放大这个比例，它不能作为独立的轨迹质量或机械限位判据。
+真机 rad/m 拒绝分支已删除，旧参数正值也只作诊断参考；机械限位、碰撞及腕部检查独立保留。
+
 ## 当前箱单：十个 55×35×20 cm 箱子
 
 按现场手头箱子的尺寸，当前已生成轨迹的输入为

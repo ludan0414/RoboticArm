@@ -102,9 +102,8 @@ class MotionPlannerNode(Node):
         self.declare_parameter("planner_id", "RRTConnect")
         self.declare_parameter("cartesian_max_step", 0.01)
         self.declare_parameter("cartesian_min_fraction", 0.95)
-        # Refuse a cartesian solution that unwinds the arm through a
-        # near-singular reconfiguration instead of executing it; see
-        # motion_executor._CARTESIAN_EXCURSION_RAD_PER_M for the measurement.
+        # Legacy parameter: diagnostic reference only. It cannot re-enable
+        # rad/m rejection; collisions, wrist checks and limits are independent.
         self.declare_parameter("cartesian_excursion_rad_per_m", 3.0)
         self.declare_parameter("velocity_scaling", 0.3)
         self.declare_parameter("acceleration_scaling", 0.3)

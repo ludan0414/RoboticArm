@@ -10,7 +10,7 @@ Segment routing (docs/plans/closed_loop_pick_retreat_nodes.md):
 
     pose_target  -> MoveGroup plan_only, then rest-to-rest ExecuteTrajectory
                     (MoveIt TOTG execute stays off; Huayan CollisionStop)
-    cartesian    -> GetCartesianPath geometry, wrist/excursion gates,
+    cartesian    -> GetCartesianPath geometry, wrist gate, excursion diagnostics,
                     occupancy sweep, then rest-to-rest ExecuteTrajectory
     named pose   -> handled by the node via plain FJT (see motion_planner_node)
 
@@ -111,26 +111,11 @@ class _OccupancyBlockedPlan(object):
     solution = None
 
 
-class _ExcursionRejectedPlan(object):
-    """A cartesian solution whose joint excursion is implausible.
-
-    Carries the measurement so the caller reports why the path was refused
-    instead of reporting it as a low fraction.
-    """
-
-    excursion_rejected = True
-    solution = None
-
-    def __init__(self, reason, measurement):
-        self.reason = str(reason)
-        self.measurement = dict(measurement)
-
-
 class _WristSingularPlan(object):
     """A solution that reconfigures or operates inside the wrist singularity.
 
-    Distinct from ``_ExcursionRejectedPlan`` because the excursion ratio can
-    look plausible while joint5 still steps across a branch boundary.
+    The excursion diagnostic can look plausible while joint5 still steps
+    across a branch boundary; wrist checks remain independent.
     """
 
     wrist_singular = True
@@ -417,20 +402,18 @@ class MotionExecutor:
             if plan is None:
                 return self._result(False, "compute_cartesian_path timeout", 0.0)
             occupancy_blocked = bool(getattr(plan, "occupancy_blocked", False))
-            excursion_rejected = bool(
-                getattr(plan, "excursion_rejected", False))
             wrist_singular = bool(getattr(plan, "wrist_singular", False))
             required = max(
                 self._min_fraction,
                 float(getattr(segment_msg,
                               "required_cartesian_fraction", 0.0) or 0.0))
             need_fallback = (
-                occupancy_blocked or excursion_rejected or wrist_singular
+                occupancy_blocked or wrist_singular
                 or fraction < required)
             if need_fallback:
                 if occupancy_blocked:
                     why = "occupancy blocked"
-                elif excursion_rejected or wrist_singular:
+                elif wrist_singular:
                     why = plan.reason
                 else:
                     why = "cartesian %.3f < %.3f" % (
@@ -451,9 +434,6 @@ class MotionExecutor:
                     return self._result(
                         False, "PLACE_PATH_INFEASIBLE occupancy blocked cartesian",
                         fraction)
-                if excursion_rejected:
-                    return self._result(
-                        False, "PLACE_PATH_EXCURSION %s" % why, fraction)
                 if wrist_singular:
                     return self._result(
                         False, "PLACE_PATH_WRIST_SINGULAR %s" % why, fraction)
@@ -489,7 +469,6 @@ class MotionExecutor:
             record["fraction"] = fraction if plan is not None else 0.0
             record["cartesian_ok"] = (
                 plan is not None
-                and not getattr(plan, "excursion_rejected", False)
                 and fraction >= self._min_fraction)
             if self._cartesian_excursion is not None:
                 record["cartesian_excursion"] = dict(self._cartesian_excursion)
@@ -943,20 +922,14 @@ class MotionExecutor:
         # centimetres; that ratio is not the path that will be sent.
         self._hold_pick_joint6(
             getattr(response, "solution", None), segment_msg)
-        rejected = self._reject_for_excursion(waypoints, response, fraction)
-        if rejected is not None:
-            return fraction, rejected
+        self._record_cartesian_excursion(waypoints, response, fraction)
         rejected = self._reject_for_wrist(response)
         if rejected is not None:
             return fraction, rejected
         return fraction, response
 
-    def _reject_for_excursion(self, waypoints, response, fraction):
-        """``_ExcursionRejectedPlan`` when the solution unwinds the arm.
-
-        Records the measurement either way so a boundary dump shows the ratio
-        of an accepted path, not only of a refused one.
-        """
+    def _record_cartesian_excursion(self, waypoints, response, fraction):
+        """Record the metric; no value of this ratio rejects a trajectory."""
         self._cartesian_excursion = None
         solution = getattr(response, "solution", None)
         if solution is None:
@@ -982,10 +955,7 @@ class MotionExecutor:
                 measurement["rad_per_m"], measurement["limit_rad_per_m"],
                 measurement["joint"], measurement["excursion_rad"],
                 measurement["path_len_m"]))
-        if not measurement["enforced"]:
-            self._node.get_logger().warning("ADVISORY ONLY: " + reason)
-            return None
-        return _ExcursionRejectedPlan(reason, measurement)
+        self._node.get_logger().warning("DIAGNOSTIC ONLY: " + reason)
 
     def _reject_for_wrist(self, response):
         """``_WristSingularPlan`` when the solution reconfigures the wrist.
