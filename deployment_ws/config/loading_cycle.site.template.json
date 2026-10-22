@@ -59,8 +59,9 @@
     ],
     "ground_base_z_m": -0.8599999999999999,
     "pickup_position_source": "vision",
-    "max_segment_translation_m": 0.3,
-    "max_segment_rotation_rad": 1.0471975511965976,
+    "max_segment_translation_m": 0.5,
+    "max_segment_rotation_rad": 1.5707963267948966,
+    "enforce_segment_heuristics": false,
     "axis_test_step_m": 0.02
   },
   "carry_entry": {

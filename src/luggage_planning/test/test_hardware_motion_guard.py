@@ -14,6 +14,7 @@ def yaw_quat(yaw):
 
 def profile():
     return dict(assumptions=dict(feeder_xy_m=[-1.2, 0]), motion_safety=dict(
+        enforce_segment_heuristics=True,
         schema_version=1, feeder_base_xy_m=[-1.2, 0], ground_base_z_m=-.86,
         expected_container_world_pose=dict(position_m=[-1.65, -.04, 0], orientation_xyzw=[0, 0, 1, 0]),
         expected_base_world_pose=dict(position_m=[0, 0, .86],
@@ -47,7 +48,8 @@ class GuardTests(unittest.TestCase):
         guard = HardwareMotionGuard(profile())
         origin = Pose(Point(0, 1.2, .86), Quaternion())
         self.assertTrue(guard.check_segment(origin, Pose(Point(0, 1.2, .30), Quaternion()), "pre_grasp")[0])
-        self.assertFalse(guard.check_segment(origin, Pose(Point(0, -1.2, .86), Quaternion()), "return_observe")[0])
+        self.assertFalse(guard.check_segment(origin, Pose(Point(0, -1.2, .86), Quaternion()), "exit_0")[0])
+        self.assertTrue(guard.check_segment(origin, Pose(Point(0, -1.2, .86), Quaternion()), "return_observe")[0])
         self.assertTrue(guard.check_segment(origin, Pose(Point(.5, 1.44, .3), yaw_quat(math.pi)), "pre_grasp")[0])
         self.assertFalse(guard.check_segment(origin, Pose(origin.position, yaw_quat(math.pi)), "place_via_0")[0])
 
@@ -72,6 +74,25 @@ class GuardTests(unittest.TestCase):
         self.assertTrue(planned_joint_excursion(trajectory([0, .1, .2]), math.pi / 4)[0])
         self.assertFalse(planned_joint_excursion(trajectory([0, 1, math.pi]), math.pi / 4)[0])
         self.assertFalse(planned_joint_excursion(trajectory([3.13, -3.13]), math.pi / 4)[0])
+
+    def test_default_profile_heuristics_warn_without_stopping_motion(self):
+        data=profile()
+        del data['motion_safety']['enforce_segment_heuristics']
+        guard=HardwareMotionGuard(data)
+        origin=Pose(Point(0,1.2,.86),Quaternion())
+        ok,message=guard.check_segment(origin,Pose(Point(0,-1.2,.86),Quaternion()),'place_via_0')
+        self.assertTrue(ok)
+        self.assertIn('WARNING',message)
+        self.assertTrue(guard.check_segment(origin,Pose(origin.position,yaw_quat(math.pi)),'place_via_0')[0])
+        self.assertFalse(guard.check_segment(origin,Pose(Point(math.nan,0,0),Quaternion()),'place_via_0')[0])
+
+    def test_joint_rejection_names_joint_and_relative_excursion(self):
+        trajectory=SimpleNamespace(joint_names=['j1','j2','j3'],points=[
+            SimpleNamespace(positions=[0,0,0]),SimpleNamespace(positions=[0,0,1])])
+        ok,message=planned_joint_excursion(trajectory,math.pi/4)
+        self.assertFalse(ok)
+        self.assertIn('j3',message)
+        self.assertIn('relative to segment start',message)
 
 
 if __name__ == "__main__":

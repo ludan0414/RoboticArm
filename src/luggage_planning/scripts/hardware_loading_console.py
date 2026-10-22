@@ -94,6 +94,8 @@ class CommissioningDriver(HardwarePickDriver):
         ok, message = self.motion_guard.check_segment(actual, segment.target_pose, segment.name)
         if not ok:
             return ok, message
+        if "_WARNING:" in message:
+            self.get_logger().warning("ADVISORY ONLY: " + message)
         entry = getattr(self, "_carry_entry", None)
         if entry is not None:
             return entry.check_segment(actual, segment)

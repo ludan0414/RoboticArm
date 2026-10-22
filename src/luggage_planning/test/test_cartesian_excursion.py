@@ -13,10 +13,11 @@ import json
 import os
 import unittest
 
-from luggage_planning.motion_executor import (
+from luggage_planning.motion_excursion import (
     _CARTESIAN_EXCURSION_MIN_PATH_M,
     _CARTESIAN_EXCURSION_RAD_PER_M,
     cartesian_excursion,
+    excursion_diagnostic,
 )
 
 _FIXTURE = os.path.join(
@@ -41,6 +42,13 @@ def _measure(segment, **kwargs):
 
 
 class TestCartesianExcursion(unittest.TestCase):
+    def test_advisory_mode_reports_3104_without_rejecting(self):
+        points=[_Point([0]*6),_Point([0,0,.3104,0,0,0])]
+        advisory=excursion_diagnostic([],points,.1,0)
+        self.assertEqual(advisory['rad_per_m'],3.104)
+        self.assertFalse(advisory['reject'])
+        self.assertFalse(advisory['enforced'])
+        self.assertTrue(excursion_diagnostic([],points,.1,3)['reject'])
 
     @classmethod
     def setUpClass(cls):

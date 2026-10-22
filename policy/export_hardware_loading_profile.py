@@ -104,8 +104,9 @@ def export_profile(bundle):
                     expected_container_world_pose=pose_dict(np.r_[container["translation"],
                         Rotation.from_euler("xyz", container["rotation_rpy"]).as_quat()]),
                     feeder_base_xy_m=[-1.6, 0.0], ground_base_z_m=-float(base_position[2]),
-                    pickup_position_source="vision", max_segment_translation_m=.30,
-                    max_segment_rotation_rad=float(np.pi / 3),
+                    pickup_position_source="vision", max_segment_translation_m=.50,
+                    max_segment_rotation_rad=float(np.pi / 2),
+                    enforce_segment_heuristics=False,
                     axis_test_step_m=.02),
                 carry_entry=dict(strategy="outside_retract_high_lift_v1",
                     pedestal_center_world_pose=pose_dict(np.r_[

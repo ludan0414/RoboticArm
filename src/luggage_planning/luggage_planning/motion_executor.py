@@ -31,6 +31,10 @@ from luggage_planning.joint6_hold import (
     pin_joint6_trajectory,
 )
 from luggage_planning.motion_boundary import robot_traj_to_dict
+from luggage_planning.motion_excursion import (
+    cartesian_excursion, excursion_diagnostic,
+    _CARTESIAN_EXCURSION_RAD_PER_M, _CARTESIAN_EXCURSION_MIN_PATH_M,
+)
 from luggage_planning.ros_clock_wait import wait_event
 from luggage_planning.trajectory_timing import time_parameterize_cartesian
 
@@ -70,11 +74,9 @@ _JOINT_ACC_LIMIT = 3.14
 # legitimate cartesian segment in that run stayed at 0.93-1.50 rad/m, so the
 # bound sits above the accepted set with 2x margin. jump_threshold does not
 # catch this: the rejected path's largest adjacent step was 0.157 rad.
-_CARTESIAN_EXCURSION_RAD_PER_M = 3.0
 # Below this Cartesian length the ratio is dominated by its denominator (a
 # 9 mm traverse reads 2.07 rad/m for 0.02 rad of motion), so short hops are
 # judged against the floor instead.
-_CARTESIAN_EXCURSION_MIN_PATH_M = 0.05
 # The wrist is degenerate at elfin_joint5 = k*pi, where joint4 and joint6
 # become collinear and a small end-effector change can demand a ~pi sweep of
 # both. Across the 45 recorded segments in motion_occ/2026-09-21_* the two
@@ -137,41 +139,6 @@ class _WristSingularPlan(object):
     def __init__(self, reason, measurement):
         self.reason = str(reason)
         self.measurement = dict(measurement)
-
-
-def cartesian_excursion(joint_names, points, path_len_m,
-                        limit_rad_per_m=_CARTESIAN_EXCURSION_RAD_PER_M,
-                        min_path_m=_CARTESIAN_EXCURSION_MIN_PATH_M):
-    """Joint excursion per metre of Cartesian travel for one solution.
-
-    ``points`` are objects with ``positions`` (a JointTrajectory) and
-    ``path_len_m`` is the straight-line length of the requested waypoint
-    chain. Returns ``None`` when there is nothing to judge, otherwise a dict
-    with the worst joint, its total variation, the ratio, and ``ok``.
-    """
-    rows = [list(getattr(p, "positions", p)) for p in (points or [])]
-    rows = [r for r in rows if r]
-    if len(rows) < 2 or path_len_m is None:
-        return None
-    width = min(len(r) for r in rows)
-    if width <= 0:
-        return None
-    names = list(joint_names or JOINTS)
-    totals = [0.0] * width
-    for before, after in zip(rows, rows[1:]):
-        for index in range(width):
-            totals[index] += abs(float(after[index]) - float(before[index]))
-    worst = max(range(width), key=lambda index: totals[index])
-    denominator = max(float(path_len_m), float(min_path_m))
-    ratio = totals[worst] / denominator if denominator > 0 else float("inf")
-    return {
-        "joint": names[worst] if worst < len(names) else "joint%d" % worst,
-        "excursion_rad": round(totals[worst], 4),
-        "path_len_m": round(float(path_len_m), 4),
-        "rad_per_m": round(ratio, 3),
-        "limit_rad_per_m": float(limit_rad_per_m),
-        "ok": ratio <= float(limit_rad_per_m),
-    }
 
 
 def _wrist_cell(value):
@@ -999,11 +966,11 @@ class MotionExecutor:
             self._cartesian_excursion = {"skipped": "fk_unavailable"}
             return None
         joint_traj = getattr(solution, "joint_trajectory", solution)
-        measurement = cartesian_excursion(
+        measurement = excursion_diagnostic(
             getattr(joint_traj, "joint_names", None) or JOINTS,
             list(getattr(joint_traj, "points", None) or []),
             path_len * max(0.0, min(1.0, fraction)),
-            limit_rad_per_m=self._excursion_limit)
+            configured_limit=self._excursion_limit)
         if measurement is None:
             return None
         self._cartesian_excursion = measurement
@@ -1015,6 +982,9 @@ class MotionExecutor:
                 measurement["rad_per_m"], measurement["limit_rad_per_m"],
                 measurement["joint"], measurement["excursion_rad"],
                 measurement["path_len_m"]))
+        if not measurement["enforced"]:
+            self._node.get_logger().warning("ADVISORY ONLY: " + reason)
+            return None
         return _ExcursionRejectedPlan(reason, measurement)
 
     def _reject_for_wrist(self, response):

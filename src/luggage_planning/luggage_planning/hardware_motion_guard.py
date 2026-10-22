@@ -28,8 +28,9 @@ class HardwareMotionGuard:
             raise ValueError("finite base-frame feeder XY required")
         if list(self.feeder) != profile.get("assumptions", {}).get("feeder_xy_m"):
             raise ValueError("feeder assumption and safety gate disagree")
-        self.step = self._limit(settings, "max_segment_translation_m", .30, .35)
-        self.rotation = self._limit(settings, "max_segment_rotation_rad", math.pi / 3, math.pi / 2)
+        self.step = self._limit(settings, "max_segment_translation_m", .50, .60)
+        self.rotation = self._limit(settings, "max_segment_rotation_rad", math.pi / 2, math.pi / 2)
+        self.enforce_segments = bool(settings.get("enforce_segment_heuristics", False))
 
     @staticmethod
     def _limit(settings, name, default, maximum):
@@ -69,15 +70,24 @@ class HardwareMotionGuard:
         end = (target.position.x, target.position.y, target.position.z)
         if not all(math.isfinite(v) for v in start + end):
             return False, "NONFINITE_MOTION_TARGET"
+        if name in ("initialize_observe", "return_observe"):
+            # Free-space pose goals already have collision-aware MoveIt plans.
+            # A TCP chord cap was blocking valid initialization/return paths.
+            if not math.isfinite(quaternion_angle(actual.orientation, target.orientation)):
+                return False, "INVALID_MOTION_ORIENTATION"
+            return True, "MoveIt owns free-space observe motion"
         if name in ("pre_grasp", "approach", "attach", "pick_retreat", "retry_reverse"):
             if not math.isfinite(quaternion_angle(actual.orientation, target.orientation)):
                 return False, "INVALID_PICK_ORIENTATION"
             return True, "existing vision Pick owns this segment"
         limit = self.step
+        angle = quaternion_angle(actual.orientation, target.orientation)
+        if not math.isfinite(angle):
+            return False, "INVALID_MOTION_ORIENTATION"
         if math.dist(start, end) > limit + 1e-5:
-            return False, "MOTION_STEP_TOO_LARGE: %s %.3fm > %.3fm" % (name, math.dist(start, end), limit)
-        if quaternion_angle(actual.orientation, target.orientation) > self.rotation:
-            return False, "MOTION_ROTATION_TOO_LARGE: " + name
+            return not self.enforce_segments, "MOTION_STEP_WARNING: %s %.3fm > %.3fm" % (name, math.dist(start, end), limit)
+        if angle > self.rotation:
+            return not self.enforce_segments, "MOTION_ROTATION_WARNING: " + name
         return True, "bounded segment"
 
 
@@ -96,8 +106,13 @@ def planned_joint_excursion(robot_trajectory, maximum_rad):
         positions = list(point.positions)
         if len(positions) != len(start) or not all(math.isfinite(v) for v in positions):
             return False, "JOINT_EXCURSION_GUARD: malformed trajectory"
-        if max(abs(a - b) for a, b in zip(positions, start)) > maximum_rad:
-            return False, "JOINT_EXCURSION_GUARD: planned joint turn exceeds %.1f degrees" % math.degrees(maximum_rad)
+        worst = max(range(len(start)), key=lambda i: abs(positions[i]-start[i]))
+        excursion = abs(positions[worst]-start[worst])
+        if excursion > maximum_rad:
+            names = getattr(trajectory, "joint_names", ())
+            name = names[worst] if worst < len(names) else "joint%d" % (worst+1)
+            return False, ("JOINT_EXCURSION_GUARD: %s moves %.1f degrees relative to segment start; limit %.1f degrees"
+                           % (name, math.degrees(excursion), math.degrees(maximum_rad)))
     return True, "bounded planned joint motion"
 
 

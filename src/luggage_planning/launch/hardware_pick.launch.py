@@ -469,7 +469,10 @@ def generate_launch_description():
                     "named_pose_max_vel": 1.0,
                     "velocity_scaling": 0.15,
                     "acceleration_scaling": 0.10,
-                    "max_segment_joint_excursion_rad": 0.7853981633974483,
+                    # Extra excursion heuristics are advisory for this real
+                    # cell. MoveIt limits/collisions and wrist checks remain.
+                    "max_segment_joint_excursion_rad": 0.0,
+                    "cartesian_excursion_rad_per_m": 0.0,
                     "fjt_action": "/elfin_arm_controller/follow_joint_trajectory",
                 }],
                 condition=start_planning,

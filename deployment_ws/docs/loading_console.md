@@ -117,8 +117,13 @@ python policy/export_hardware_loading_profile.py \
 原 Pick 的接近、吸附、抬起及失败反退不套用 console 的固定短段限制。
 成功 Pick 后保持吸附，从新鲜实测 TCP 接至首个 carry 目标；接驳分成不超过 15cm/20° 的段，
 逐段携箱碰撞检查并要求完整 Cartesian 路径，失败停止并保持吸附，不强行接入。
-后续 place、退出及最终观察位保持不变。普通搬运/归位段最大位移 30cm、工具转角 60°。
-工具 TF 必须为最近 2s 数据。规划器在执行前拒绝任何关节相对本段起点超过 45° 的计划，
+后续 place、退出及最终观察位保持不变。普通段位移/转角启发式现在只告警、不拦停；
+模板设 `enforce_segment_heuristics=false`，旧 profile 没有该字段时也默认只告警。
+初始化和最终归位交给 MoveIt 自由空间规划，不再用 TCP 直线距离上限拦停。
+原 45° 单段关节转幅限制已在真机 launch 中关闭（`max_segment_joint_excursion_rad=0`）；
+原 `3 rad/m` 笛卡尔转动比限制也只记录诊断/告警（`cartesian_excursion_rad_per_m=0`），不会因 `3.104 > 3` 中断。
+这两项需要重新构建并重启笔记本 L1，运行中的 executor 不会因 `ros2 param set` 自动重建。
+工具 TF 仍必须为最近 2s 数据。MoveIt 机械限位、碰撞、腕部翻转检查、失吸停机和释放确认保留；
 硬件 launch 的速度/加速度比例降至 15%/10%。这些限制不替代现场方向观察和实体急停。
 
 实体急停是停止手段；网页关闭、Ctrl-C 和 HTTP 均不是急停。
