@@ -31,13 +31,15 @@ class GuardTests(unittest.TestCase):
         self.assertFalse(guard.check_base(Pose(Point(0, 0, .86), yaw_quat(math.pi / 2)))[0])
         self.assertFalse(guard.check_base(Pose(Point(math.nan, 0, .86), yaw_quat(-math.pi / 2)))[0])
 
-    def test_right_feeder_passes_and_mirrored_box_stops(self):
+    def test_pickup_uses_vision_position_without_fixed_feeder_or_floor_gate(self):
         guard = HardwareMotionGuard(profile())
         base_from_world = Pose(Point(0, 0, -.86), yaw_quat(math.pi / 2))
         detected = SimpleNamespace(frame="world", box_xyz=[0, 1.2, .1], box_size=[.55, .35, .2])
         self.assertTrue(guard.check_pickup(detected, base_from_world)[0])
         detected.box_xyz = [0, -1.2, .1]
-        self.assertFalse(guard.check_pickup(detected, base_from_world)[0])
+        self.assertTrue(guard.check_pickup(detected, base_from_world)[0])
+        detected.box_xyz = [0.018, 1.443, .25]  # reported offset plus floor error
+        self.assertTrue(guard.check_pickup(detected, base_from_world)[0])
         detected.box_xyz = [math.nan, 1.2, .1]
         self.assertFalse(guard.check_pickup(detected, base_from_world)[0])
 
@@ -46,7 +48,8 @@ class GuardTests(unittest.TestCase):
         origin = Pose(Point(0, 1.2, .86), Quaternion())
         self.assertTrue(guard.check_segment(origin, Pose(Point(0, 1.2, .30), Quaternion()), "pre_grasp")[0])
         self.assertFalse(guard.check_segment(origin, Pose(Point(0, -1.2, .86), Quaternion()), "return_observe")[0])
-        self.assertFalse(guard.check_segment(origin, Pose(origin.position, yaw_quat(math.pi)), "pre_grasp")[0])
+        self.assertTrue(guard.check_segment(origin, Pose(Point(.5, 1.44, .3), yaw_quat(math.pi)), "pre_grasp")[0])
+        self.assertFalse(guard.check_segment(origin, Pose(origin.position, yaw_quat(math.pi)), "place_via_0")[0])
 
     def test_six_axis_jogs_are_base_relative_and_return_after_every_direction(self):
         origin = Pose(Point(.1, 1.2, .86), Quaternion())

@@ -9,6 +9,21 @@
 属于尚待真机验收的调试入口。
 下文保留早期单机与底层检查说明；当前双机操作优先从上述文档开始。
 
+`scripts/hardware_pick.sh`（含 ServoJ 包装入口）现在通过 Linux 监督进程启动：
+同一用户在本机只能运行一套 pick 后台，跨 checkout、跨 ROS domain 也不能重复启动。
+启动前检查即将启用的本地节点及旧 launch；发现残留时列出 PID/PPID 并拒绝启动，
+不会自动杀其他终端的进程。`start_perception:=false` 等关闭的角色不参与节点冲突检查。
+Ctrl+C、终端断开、SIGTERM 或 launch 自行退出时，监督进程依次用 SIGINT（15 秒）、
+SIGTERM（5 秒）、必要时 SIGKILL（2 秒）清理本次进程树，并回收被收养的孤儿节点。
+正常退出应打印 `cleanup complete: no owned child processes remain`。
+强制杀死监督进程或断电仍可能留下进程；下次启动会检查并拒绝叠加。
+遇到拒绝启动，先回原终端正常停止旧后台；若为历史孤儿，核对打印的 PID 对应本次现场后，
+逐个 `kill -INT <PID>` 并复查退出，勿用宽泛的 `pkill -f ros`。
+这些措施处理进程残留和重复实例导致的资源占用，不代表已经诊断出节点内部的内存泄漏。
+
+无需 ROS/机械臂的生命周期回归：Linux 上运行
+`python3 -m unittest discover -s deployment_ws/test -p test_hardware_pick_supervisor.py -v`。
+
 **实机代码 (site / real-cell).** This tree is not part of the Gazebo
 simulation stack. Do not treat it as a replacement for
 `src/luggage_perception` canonical preprocessor configs.

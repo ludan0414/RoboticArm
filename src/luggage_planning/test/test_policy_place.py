@@ -4,9 +4,31 @@ from types import SimpleNamespace
 import unittest
 
 from luggage_planning.policy_place import (
-    build_place_segments, parse_place_target, run_place,
+    build_place_segments, connect_place_from_pose, parse_place_target, run_place,
 )
-from luggage_planning.pose import Point, Pose, Quaternion
+from luggage_planning.pose import Point, Pose, Quaternion, MotionSegment
+
+
+class PickupConnectionTests(unittest.TestCase):
+    def test_actual_pickup_connects_without_changing_remaining_route(self):
+        actual = Pose(Point(0, 1.443, .3), Quaternion())
+        first = MotionSegment(name="place_via_0", type="cartesian",
+            target_pose=Pose(Point(.3, 1.0, .86), Quaternion(0, 0, 1, 0)),
+            required_cartesian_fraction=1.0)
+        tail = MotionSegment(name="place_descend")
+        result = connect_place_from_pose(actual, [first, tail])
+        self.assertGreater(len(result), 2)
+        self.assertIs(result[-2], first)
+        self.assertIs(result[-1], tail)
+        previous = actual
+        for segment in result[:-1]:
+            pose = segment.target_pose
+            self.assertLessEqual(math.dist(vars(previous.position).values(), vars(pose.position).values()), .150001)
+            dot = abs(sum(a*b for a, b in zip(vars(previous.orientation).values(), vars(pose.orientation).values())))
+            self.assertLessEqual(2 * math.acos(min(1, dot)), math.radians(20) + 1e-6)
+            self.assertFalse(segment.allow_ompl_fallback)
+            self.assertEqual(segment.required_cartesian_fraction, 1.0)
+            previous = pose
 
 
 def target(**overrides):

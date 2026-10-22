@@ -660,6 +660,7 @@ class HardwarePickDriver(Node):
                 if not segments:
                     self.get_logger().error("PLACE_CARRY_FAULT: selected grasp missing")
                     return 10
+                segments = self.prepare_place_segments(segments)
                 for segment in segments:
                     ports.log_event(dict(stage="place_target", name=segment.name,
                                          pose=vars(segment.target_pose.position),
@@ -687,6 +688,10 @@ class HardwarePickDriver(Node):
             return result.exit_code
         finally:
             ports.close()
+
+    def prepare_place_segments(self, segments):
+        """Optional commissioning connector, called only after successful Pick."""
+        return segments
 
     def shutdown_vacuum(self):
         if self._release_on_exit:

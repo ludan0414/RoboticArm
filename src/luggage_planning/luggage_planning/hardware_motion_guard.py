@@ -1,4 +1,4 @@
-"""Pure commissioning limits: frame identity, pickup zone and short motions."""
+"""Commissioning frame identity and short motions after vision-owned pickup."""
 import math
 
 from luggage_planning.pose import Point, Pose, Quaternion, MotionSegment
@@ -28,12 +28,8 @@ class HardwareMotionGuard:
             raise ValueError("finite base-frame feeder XY required")
         if list(self.feeder) != profile.get("assumptions", {}).get("feeder_xy_m"):
             raise ValueError("feeder assumption and safety gate disagree")
-        self.radius = self._limit(settings, "pickup_radius_m", .20, .25)
         self.step = self._limit(settings, "max_segment_translation_m", .30, .35)
         self.rotation = self._limit(settings, "max_segment_rotation_rad", math.pi / 3, math.pi / 2)
-        self.floor_z = float(settings["ground_base_z_m"])
-        if not math.isfinite(self.floor_z):
-            raise ValueError("ground_base_z_m must be finite")
 
     @staticmethod
     def _limit(settings, name, default, maximum):
@@ -57,31 +53,27 @@ class HardwareMotionGuard:
             return False, "CONTAINER_FRAME_MISMATCH: runtime scene differs from approved YAML"
         return True, "site container TF matches"
 
-    def check_pickup(self, detection, base_from_world):
+    def check_pickup(self, detection, base_from_world=None):
         if (detection.frame != "world" or len(detection.box_xyz) != 3
                 or len(detection.box_size) != 3
                 or not all(math.isfinite(v) for v in detection.box_xyz)
                 or not all(math.isfinite(v) and v > 0 for v in detection.box_size)):
             return False, "INVALID_PICKUP_GEOMETRY"
-        rotated = quat_rotate(base_from_world.orientation, detection.box_xyz)
-        point = [rotated[i] + getattr(base_from_world.position, axis)
-                 for i, axis in enumerate(("x", "y", "z"))]
-        if math.dist(point[:2], self.feeder) > self.radius:
-            return False, "PICKUP_ZONE_MISMATCH: measured base XY=%s expected=%s" % (point[:2], self.feeder)
-        if abs(point[2] - float(detection.box_size[2]) / 2 - self.floor_z) > .08:
-            return False, "PICKUP_FLOOR_MISMATCH"
-        return True, "measured box inside approved pickup zone"
+        # The feeder is nominal, not a measured target. Original vision Pick
+        # owns candidate authorization, reachability, approach and seal checks.
+        # Ignore legacy pickup_radius_m / ground_base_z_m in installed profiles.
+        return True, "measured pickup delegated to vision Pick"
 
     def check_segment(self, actual, target, name):
         start = (actual.position.x, actual.position.y, actual.position.z)
         end = (target.position.x, target.position.y, target.position.z)
         if not all(math.isfinite(v) for v in start + end):
             return False, "NONFINITE_MOTION_TARGET"
-        horizontal = math.dist(start[:2], end[:2])
-        # The existing pick can descend vertically from the high observe pose.
-        # Its lateral travel remains bounded; no large cross-cell approach.
-        vertical_pick = name.startswith("pick_") or name in ("pre_grasp", "pre_pick", "pre_approach", "approach", "attach")
-        limit = .8 if vertical_pick and horizontal <= .12 else self.step
+        if name in ("pre_grasp", "approach", "attach", "pick_retreat", "retry_reverse"):
+            if not math.isfinite(quaternion_angle(actual.orientation, target.orientation)):
+                return False, "INVALID_PICK_ORIENTATION"
+            return True, "existing vision Pick owns this segment"
+        limit = self.step
         if math.dist(start, end) > limit + 1e-5:
             return False, "MOTION_STEP_TOO_LARGE: %s %.3fm > %.3fm" % (name, math.dist(start, end), limit)
         if quaternion_angle(actual.orientation, target.orientation) > self.rotation:

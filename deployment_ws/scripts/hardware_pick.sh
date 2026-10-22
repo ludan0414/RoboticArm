@@ -145,4 +145,6 @@ if [[ "$has_semantic_device" == false ]] && ! _has_nvidia_gpu; then
   launch_args+=("semantic_device:=cpu")
 fi
 
-exec ros2 launch luggage_planning hardware_pick.launch.py "${launch_args[@]}"
+# Keep a supervisor outside ros2 launch: duplicate detection, signal forwarding,
+# and reaping still work when launch itself exits before its nodes.
+exec python3 "$DEPLOY/scripts/hardware_pick_supervisor.py" "${launch_args[@]}"

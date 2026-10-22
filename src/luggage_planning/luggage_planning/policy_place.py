@@ -5,7 +5,7 @@ waypoints still go through PlanMotion with the attached measured payload.
 No packing-map commit or placement verification is implied by success.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import math
 
 from luggage_planning.pose import MotionSegment, Point, Pose, Quaternion
@@ -97,6 +97,47 @@ def build_place_segments(target, detection, candidate):
         segment("place_retreat", tool_pose(target.box_pose, target.clearance_m)),
     ])
     return segments
+
+
+def connect_place_from_pose(actual, segments):
+    """Join measured successful Pick retreat to the first Cartesian carry pose.
+
+    Only subdivides the first connection; downstream route and return targets
+    stay unchanged. Each piece still requires complete collision-checked
+    Cartesian planning with the attached payload; there is no OMPL fallback.
+    """
+    segments = list(segments)
+    if not segments or segments[0].type != "cartesian":
+        return segments
+    first = segments[0]
+    start = _vector([actual.position.x, actual.position.y, actual.position.z], 3, "live TCP")
+    end = _vector([first.target_pose.position.x, first.target_pose.position.y,
+                   first.target_pose.position.z], 3, "carry TCP")
+    quats = []
+    for pose in (actual, first.target_pose):
+        q = _quaternion([pose.orientation.x, pose.orientation.y,
+                         pose.orientation.z, pose.orientation.w])
+        quats.append((q.x, q.y, q.z, q.w))
+    a, b = quats
+    dot = sum(x * y for x, y in zip(a, b))
+    if dot < 0:
+        b, dot = tuple(-v for v in b), -dot
+    angle = math.acos(min(1.0, dot))
+    count = max(1, math.ceil(math.dist(start, end) / .15),
+                math.ceil(2 * angle / math.radians(20)))
+    connection = []
+    for index in range(1, count):
+        t = index / count
+        if angle < 1e-6:
+            q = a
+        else:
+            q = tuple((math.sin((1 - t) * angle) * x + math.sin(t * angle) * y)
+                      / math.sin(angle) for x, y in zip(a, b))
+        pose = Pose(Point(*(x + t * (y - x) for x, y in zip(start, end))), Quaternion(*q))
+        connection.append(replace(first, name="place_pickup_connect_%d" % index,
+            target_pose=pose, waypoints=[], allow_ompl_fallback=False,
+            required_cartesian_fraction=1.0))
+    return connection + segments
 
 
 def run_place(ports, segments, use_scene=True, low_hold_sec=0.5,

@@ -100,7 +100,7 @@ def export_profile(bundle):
                     expected_container_world_pose=pose_dict(np.r_[container["translation"],
                         Rotation.from_euler("xyz", container["rotation_rpy"]).as_quat()]),
                     feeder_base_xy_m=[-1.2, 0.0], ground_base_z_m=-float(base_position[2]),
-                    pickup_radius_m=.20, max_segment_translation_m=.30,
+                    pickup_position_source="vision", max_segment_translation_m=.30,
                     max_segment_rotation_rad=float(np.pi / 3),
                     axis_test_step_m=.02),
                 observe_tool_pose=observe, cycles=cycles)

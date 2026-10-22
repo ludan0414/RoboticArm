@@ -122,6 +122,21 @@ class AdapterTests(unittest.TestCase):
         self.assertFalse(driver.remove_scene_box()[0])
         self.assertEqual(driver.events, ["detach"])
 
+    def test_carry_connector_reads_fresh_actual_tcp(self):
+        driver = self.module.CommissioningDriver()
+        calls = []
+        def lookup(target, source, fresh=False):
+            calls.append((target, source, fresh))
+            return Pose(Point(0, 1.443, .3), Quaternion())
+        driver.lookup_pose = lookup
+        first = MotionSegment(name="place_via_0", type="cartesian",
+                              target_pose=Pose(Point(0, 1.0, .7), Quaternion()),
+                              required_cartesian_fraction=1.0)
+        result = driver.prepare_place_segments([first])
+        self.assertEqual(calls, [("world", "suction_contact_frame", True)])
+        self.assertGreater(len(result), 1)
+        self.assertIs(result[-1], first)
+
 
 if __name__ == "__main__":
     unittest.main()

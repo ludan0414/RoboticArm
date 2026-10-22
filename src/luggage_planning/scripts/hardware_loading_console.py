@@ -74,7 +74,12 @@ class CommissioningDriver(HardwarePickDriver):
 
     def guard_detection(self, detection):
         self.validate_scene_frame()
-        return self.motion_guard.check_pickup(detection, self.lookup_pose("elfin_base_link", "world"))
+        return self.motion_guard.check_pickup(detection, None)
+
+    def prepare_place_segments(self, segments):
+        from luggage_planning.policy_place import connect_place_from_pose
+        actual = self.lookup_pose("world", "suction_contact_frame", fresh=True)
+        return connect_place_from_pose(actual, segments)
 
     def guard_segment(self, segment):
         self.validate_scene_frame()
