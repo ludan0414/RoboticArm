@@ -471,7 +471,10 @@ IK 候选生成先按 S20 URDF 的肩部到末端保守臂展半径，解析求�
 grey 55×36×23 and red 59×37×24 cm. The greedy planner may reorder them.
 The replay uses the prepared order, colors the boxes, and displays the physical
 color and dimensions beside Start Pick. Pickup remains at base (-1.6, 0), on
-the floor; the observation point is raised to base height.
+the floor; the EEF waiting/observation point is independently set to base
+(-1.2, 0, 0), at base height. Empty return goes directly to this observation
+point. The default recording is `demo_data/site_four_colors_right160_observe120`;
+the older `site_four_colors_right160` recording retains its original waiting point.
 
 ```powershell
 conda activate newton-rope

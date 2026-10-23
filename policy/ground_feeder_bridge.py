@@ -146,7 +146,7 @@ class BridgeCompiler(MotionCompiler):
 
 
 def prepare_bridge(base_folder, output, feeder_xy, *, validate=True, observe_at_base=False,
-                   feeder_world_xy=None):
+                   feeder_world_xy=None, observation_base_xy=None):
     base_folder, output = Path(base_folder), Path(output)
     source_plan = (check_bundle(base_folder) if validate else
                    json.loads((base_folder/"plan.json").read_text(encoding="utf-8")))
@@ -184,8 +184,12 @@ def prepare_bridge(base_folder, output, feeder_xy, *, validate=True, observe_at_
         if feeder_world_xy is not None:
             xy = np.asarray(feeder_world_xy, dtype=float)
         observation_z = float(base[2])
+        observation_xy = (xy if observation_base_xy is None else
+            (base[:3] + Rotation.from_quat(base[3:]).apply([*observation_base_xy, 0]))[:2])
         plan["observation"] = dict(tool_contact_world_z_m=observation_z,
-                                   feeder_world_xy_m=xy.tolist())
+                                   feeder_world_xy_m=xy.tolist(),
+                                   tool_contact_world_xy_m=observation_xy.tolist(),
+                                   base_xy_m=observation_base_xy)
         with np.load(base_folder/"trajectory.npz") as data:
             for number, row in enumerate(plan["sequence"]):
                 run.current_box_size = row["input_dims_m"]
@@ -211,7 +215,7 @@ def prepare_bridge(base_folder, output, feeder_xy, *, validate=True, observe_at_
                 # payload corner >=15cm above the pedestal throughout connector.
                 high_contact = contact.copy()
                 high_contact[2] = run.high_carry_bottom_z + height + .005
-                observation = np.array([*xy, observation_z]) if observe_at_base else hover
+                observation = np.array([*observation_xy, observation_z]) if observe_at_base else hover
                 previous_q = run.q.copy()
                 run.q = dock_q.copy()
                 run.ik.q_last = dock_q.astype(np.float32)
@@ -269,8 +273,11 @@ def prepare_bridge(base_folder, output, feeder_xy, *, validate=True, observe_at_
                 for index in range(start, end):
                     run.reference_frame(data, index)
                     copied_frames += 1
-                empty_return = run.joint_path(run.q.copy(), hover_q, "RETURN")
-                if observe_at_base:
+                if observe_at_base and observation_base_xy is not None:
+                    empty_return = run.joint_path(run.q.copy(), observation_q, "RETURN")
+                else:
+                    empty_return = run.joint_path(run.q.copy(), hover_q, "RETURN")
+                if observe_at_base and observation_base_xy is None:
                     run.joint_path(run.q.copy(), observation_q, "RETURN")
                 run.enter("VERIFY" if validate else "WAIT")
                 error = float(np.linalg.norm(run.box_pose[:3]-row["position_world_m"]))

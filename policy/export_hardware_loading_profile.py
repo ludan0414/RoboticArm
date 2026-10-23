@@ -35,6 +35,19 @@ def sample_poses(poses):
     return [pose_dict(poses[index]) for index in sample_pose_indices(poses)]
 
 
+def post_place_exit_indices(trace, box_id):
+    """Exclude pre-spawn positioning tagged with this same box ID."""
+    this_box = trace["box_id"] == box_id
+    retreat = np.flatnonzero(this_box & (trace["stage"] == "RETREAT"))
+    if not len(retreat):
+        raise ValueError("missing retreat for " + box_id)
+    returning = np.flatnonzero(this_box & (trace["stage"] == "RETURN"))
+    returning = returning[returning > retreat[-1]]
+    if not len(returning):
+        raise ValueError("missing post-place return for " + box_id)
+    return np.r_[retreat[-1], returning]
+
+
 def export_profile(bundle):
     bundle = Path(bundle)
     check_bundle(bundle, allow_partial=True)
@@ -60,14 +73,12 @@ def export_profile(bundle):
         for row in plan["sequence"]:
             this_box = trace["box_id"] == row["id"]
             carrying = np.flatnonzero(this_box & (trace["stage"] == "CARRY"))
-            retreat = np.flatnonzero(this_box & (trace["stage"] == "RETREAT"))
-            returning = np.flatnonzero(this_box & (trace["stage"] == "RETURN"))
-            if not len(carrying) or not len(retreat) or not len(returning):
+            if not len(carrying):
                 raise ValueError("incomplete demo stages for " + row["id"])
             # Start the empty route at the original high retreat pose: the real
             # driver first retreats only clearance_m after release. This first
             # exit segment lifts it to the recording's exit height.
-            exit_indices = np.r_[retreat[-1], returning]
+            exit_indices = post_place_exit_indices(trace, row["id"])
             cycles.append(dict(
                 demo_box_id=row["id"],
                 box_label=row.get("label", row["id"]),
@@ -87,6 +98,7 @@ def export_profile(bundle):
                     source_bundle="policy/demo_data/" + bundle.name,
                     source_sha256=hashes,
                     feeder_frame="elfin_base_link", feeder_xy_m=[-1.6, 0.0],
+                    observe_base_xy_m=plan.get("observation", {}).get("base_xy_m"),
                     ground_world_z_m=0.0,
                     base_world_translation_m=base_position.tolist(),
                     base_world_yaw_rad=float(base_rotation.as_euler("xyz")[2]),
@@ -114,7 +126,7 @@ def export_profile(bundle):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bundle", type=Path,
-                        default=Path(__file__).parent / "demo_data/site_four_colors_right160")
+                        default=Path(__file__).parent / "demo_data/site_four_colors_right160_observe120")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
