@@ -35,9 +35,17 @@ class HardwarePickShTest(unittest.TestCase):
 
     def test_waypoint_default_is_unchanged(self):
         src = SCRIPT.read_text(encoding="utf-8")
-        self.assertIn("hardware_pick.launch.py", src)
+        supervisor = (ROOT / "scripts" / "hardware_pick_supervisor.py").read_text(
+            encoding="utf-8")
+        self.assertIn("hardware_pick.launch.py", supervisor)
         self.assertNotIn('launch_args+=("execution_backend:=servo_j")', src)
         self.assertNotIn("exec ros2 launch luggage_perception", src)
+
+    def test_starts_via_supervisor(self):
+        src = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("hardware_pick_supervisor.py", src)
+        self.assertIn("exec python3", src)
+        self.assertNotIn("stop_hardware_pick.sh", src)
 
 
 class HardwarePickServoJShTest(unittest.TestCase):
@@ -140,6 +148,23 @@ class RecordPerceptionCaseShTest(unittest.TestCase):
         self.assertNotIn("/camera/d555/color/image_raw/compressed$", src)
         self.assertIn("hardware_pick.sh", src)
         self.assertNotIn("hardware_pick_driver.py", src)
+
+
+class SyncOrinClockShTest(unittest.TestCase):
+    SCRIPT = ROOT / "scripts" / "sync_orin_clock.sh"
+
+    def test_defaults_to_documented_orin_and_check_mode(self):
+        src = self.SCRIPT.read_text(encoding="utf-8")
+        self.assertTrue(self.SCRIPT.is_file(), self.SCRIPT)
+        self.assertTrue(self.SCRIPT.stat().st_mode & 0o111)
+        self.assertIn("hku_reconova@192.168.0.100", src)
+        self.assertIn("--check", src)
+        self.assertIn("date -s @", src)
+        self.assertIn("BatchMode=yes", src)
+        self.assertIn("ORIN_SSH_PASSWORD", src)
+        self.assertIn("PreferredAuthentications=password", src)
+        self.assertNotIn("pkill", src)
+        self.assertNotRegex(src, r'ORIN_SSH_PASSWORD="1"')
 
 
 class RecordSiteShTest(unittest.TestCase):

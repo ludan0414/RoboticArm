@@ -543,9 +543,11 @@ class HardwarePickDriver(Node):
         pos = box.pose.position
         self.get_logger().info(
             "detect id=%s xyz=(%.3f,%.3f,%.3f) size=%.3fx%.3fx%.3f "
-            "top_valid=%s candidates=%d"
+            "top_valid=%s yaw_valid=%s aspect=%.2f candidates=%d"
             % (box.id, pos.x, pos.y, pos.z, box.width, box.depth,
                box.height, box.top_surface_valid,
+               detection.yaw_valid,
+               float(getattr(box, "aspect_ratio", float("nan"))),
                len(detection.candidates)))
         for view in rank_candidates(detection.candidates):
             contact = view.contact.position

@@ -65,6 +65,10 @@ Orin 的路径以现场为准。两机路径可以不同，标定内容和消息
    更新本次 pick/place 代码后，笔记本需在 Jazzy 环境重新构建 `luggage_planning`。
 2. 两机使用 `ROS_DOMAIN_ID=7`，允许跨机 DDS 通信、时钟同步；
    检查检测服务、消息类型与 TF 时间戳能跨机使用。相同 domain 数字本身不是通信成功证明。
+   两机对时：笔记本 `192.168.0.11:3232` 作为 LAN 时间源，Orin 用 chrony 跟着它。
+   一次配置：`./scripts/setup_lan_chrony.sh`（SSH 到 `hku_reconova@192.168.0.100`）。
+   检查偏差：`./scripts/setup_lan_chrony.sh --check`。大步进之后要重启 Orin 感知。
+   应急一次性拨钟仍可用 `./scripts/sync_orin_clock.sh`。
 3. `/ABS/site/scene_tf.yaml` 必须是实测容器、机器人、相机外参等配置；两机使用一致的现场版本。
    `/ABS/site/robot_poses.site.yaml` 必须是笔记本的实测命名姿态文件。
 4. 核实机械臂 IP/端口、现场连线、吸盘 DO/DI，以及 README 中的 Gate 0/1。
@@ -128,6 +132,8 @@ source scripts/env_jazzy_real.sh
 
 保持运行。该命令已经包含执行器、硬件场景、规划和吸盘节点；
 不要再叠加运行 `jazzy_real.launch.py` 或另一个 `hardware_pick.sh`。
+第二次启动由 `hardware_pick_supervisor.py` 拒绝并列残留 PID；回原终端 Ctrl+C，
+或对确认过的孤儿 `kill -INT <PID>`。不要 `pkill -f ros`。
 不启动 Gazebo、假关节发布器或 EtherCAT 控制栈。
 
 这里采用 ServoJ 后端（20ms 固定周期，lookahead 0.1s），沿用现有 StartServo/PushServoJ 实现。
