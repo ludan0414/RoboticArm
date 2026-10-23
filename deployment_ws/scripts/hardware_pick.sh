@@ -31,7 +31,7 @@
 #   OBSERVE_POSE=current ./scripts/run_floor_box_pick.sh plan
 #   ros2 run luggage_planning hardware_pick_driver.py --release
 #
-# ServoJ + Orin sensors (does not change this script's waypoint default):
+# ServoJ is the default. Wrapper below also selects Orin-owned sensors:
 #   ./scripts/hardware_pick_servo_j.sh
 set -euo pipefail
 

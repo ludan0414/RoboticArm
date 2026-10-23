@@ -319,7 +319,8 @@ def make_model(sample: dict, source_root: Path, scene_config_path: Path,
         box_id = incoming["id"]
         sx, sy, sz = map(float, incoming["dims"])
         body = builder.add_body(xform=wp.transform(p=wp.vec3(*HIDDEN), q=wp.quat_identity()), label=box_id)
-        color = (0.83, 0.46, 0.20) if int(box_id[1:]) % 2 else (0.70, 0.52, 0.28)
+        color = incoming.get("color_rgb",
+                    (0.83, 0.46, 0.20) if int(box_id[1:]) % 2 else (0.70, 0.52, 0.28))
         builder.add_shape_box(body, hx=sx / 2, hy=sy / 2, hz=sz / 2,
                               color=wp.vec3(*color), label=f"{box_id}_collision_box")
         body_ids[box_id] = body

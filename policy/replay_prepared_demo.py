@@ -25,6 +25,9 @@ def replay(folder, *, source_root=DEFAULT_SOURCE, headless=False, fps=30, device
         print("UNVALIDATED SIMULATION PREVIEW: no feasibility certificate", flush=True)
     inputs = json.loads((folder / "input.json").read_text(encoding="utf-8"))
     total_boxes = len(plan["sequence"])
+    labels = {row["id"]: "%s (%s cm)" % (row.get("label", row["id"]),
+              " x ".join(f"{v*100:g}" for v in row["input_dims_m"]))
+              for row in plan["sequence"]}
     identity = json.loads((folder / "model_manifest.json").read_text(encoding="utf-8"))
     source, _, models = scene_paths(source_root)
     if recorded_urdf_digest(make_robot_urdf(source, models), source_root,
@@ -43,12 +46,16 @@ def replay(folder, *, source_root=DEFAULT_SOURCE, headless=False, fps=30, device
     import yaml
     from online_packing_real import Hull
     hull = Hull.from_config(yaml.safe_load((folder / "scene_tf.yaml").read_text(encoding="utf-8")))
-    sample = dict(container=hull.as_dict(), steps=[dict(incoming=dict(id=f"B{i+1}", dims=dims))
+    palette = {"blue": [.12, .38, .90], "black": [.08, .08, .10],
+               "grey": [.55, .57, .60], "red": [.85, .10, .10]}
+    input_labels = inputs.get("box_labels", [""] * len(inputs["boxes"]))
+    sample = dict(container=hull.as_dict(), steps=[dict(incoming=dict(id=f"B{i+1}", dims=dims,
+                  color_rgb=palette.get(input_labels[i], [.83, .46, .20] if i % 2 == 0 else [.70, .52, .28])))
                   for i, dims in enumerate(inputs["boxes"])])
     model, _, container, _ = make_model(sample, source_root, folder / "scene_tf.yaml")
     state = model.state()
     from manual_pick_gate import ManualPickGate
-    gate = ManualPickGate(total_boxes) if manual_pick else None
+    gate = ManualPickGate(total_boxes, labels) if manual_pick else None
     viewer = None
     with np.load(folder / "trajectory.npz") as data:
         if list(data["body_labels"]) != list(model.body_label):
@@ -87,7 +94,7 @@ def replay(folder, *, source_root=DEFAULT_SOURCE, headless=False, fps=30, device
                     if unvalidated_preview:
                         return dict(success=True, stage="PREVIEW_CLOSED", spawned=spawned,
                                     frames=frame, motion_validation="not_run")
-                    raise RuntimeError("viewer closed before ten-box completion")
+                    raise RuntimeError("viewer closed before all-box completion")
                 if viewer and not viewer.should_step():
                     viewer.begin_frame(frame / fps)
                     viewer.log_state(state)
@@ -100,7 +107,7 @@ def replay(folder, *, source_root=DEFAULT_SOURCE, headless=False, fps=30, device
                         gate.on_stage(stage, box_id)
                     if stage == "SPAWN":
                         spawned.append(box_id)
-                    text = f"{len(spawned)}/{total_boxes} | {box_id or '-'} | {stage}"
+                    text = f"{len(spawned)}/{total_boxes} | {labels.get(box_id, box_id) or '-'} | {stage}"
                     if gate and gate.waiting:
                         text += " | WAIT_PICK_BUTTON"
                     print("当前阶段: " + text, flush=True)

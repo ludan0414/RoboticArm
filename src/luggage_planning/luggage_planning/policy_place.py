@@ -89,7 +89,7 @@ def build_place_segments(target, detection, candidate):
     def segment(name, pose, cartesian=True):
         return MotionSegment(
             name=name, type="cartesian" if cartesian else "pose_target",
-            target_pose=pose, allow_ompl_fallback=False,
+            target_pose=pose, allow_ompl_fallback=name.startswith("place_via_") or name == "pre_place",
             required_cartesian_fraction=1.0 if cartesian else 0.0)
 
     segments = [segment("place_via_%d" % i, tool_pose(p))
@@ -167,7 +167,7 @@ def run_place(ports, segments, use_scene=True, low_hold_sec=0.5,
             outcome = ports.execute_segment(segment, "place")
             log(segment.name, ok=outcome.ok, message=outcome.message)
             if not outcome.ok:
-                return 10, "PLACE_CARRY_FAULT: %s" % outcome.message
+                return 10, "PLACE_CARRY_FAULT [%s]: %s" % (segment.name, outcome.message)
         if ports.di0() != 1:
             return 10, "PLACE_CARRY_FAULT: DI0 lost before release"
         release_started = True

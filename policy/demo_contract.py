@@ -50,8 +50,8 @@ def load_box_input(path):
     value = json.loads(Path(path).read_text(encoding="utf-8"))
     result = dict(value) if isinstance(value, dict) else dict(boxes=value)
     boxes = result.get("boxes")
-    if not isinstance(boxes, list) or len(boxes) != 10:
-        raise ValueError("demo input must contain exactly 10 boxes")
+    if not isinstance(boxes, list) or not boxes:
+        raise ValueError("demo input must contain a nonempty list of boxes")
     normalized = []
     for dims in boxes:
         if not isinstance(dims, (list, tuple)) or len(dims) != 3:
@@ -61,6 +61,10 @@ def load_box_input(path):
             raise ValueError("box dimensions must be finite and positive")
         normalized.append(dims)
     result.update(boxes=normalized, units="m")
+    labels = result.get("box_labels")
+    if labels is not None and (not isinstance(labels, list) or len(labels) != len(boxes)
+                               or any(not isinstance(label, str) or not label.strip() for label in labels)):
+        raise ValueError("box_labels must name each input box")
     return result
 
 
@@ -109,12 +113,12 @@ def check_bundle(folder, *, allow_partial=False):
             raise ValueError("bundle integrity mismatch: " + name)
     plan = json.loads((folder / "plan.json").read_text(encoding="utf-8"))
     inputs = json.loads((folder / "input.json").read_text(encoding="utf-8"))
-    if not allow_partial and (len(plan["sequence"]) != len(inputs["boxes"]) or len(plan["sequence"]) != 10):
-        raise ValueError("demo requires all 10 input boxes; partial plans are rejected")
+    if not allow_partial and (not inputs["boxes"] or len(plan["sequence"]) != len(inputs["boxes"])):
+        raise ValueError("demo requires all input boxes; partial plans are rejected")
     ids = [row["input_index"] for row in plan["sequence"]]
     if allow_partial:
         if not ids or len(set(ids)) != len(ids) or any(i not in range(len(inputs['boxes'])) for i in ids):
             raise ValueError("partial replay requires a nonempty unique subset of input boxes")
-    elif sorted(ids) != list(range(10)):
+    elif sorted(ids) != list(range(len(inputs["boxes"]))):
         raise ValueError("plan must contain each input box exactly once")
     return plan

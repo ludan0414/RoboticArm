@@ -1,10 +1,17 @@
 import unittest
 import numpy as np
 from scipy.spatial.transform import Rotation
-from ground_carry_clearance import pedestal_geometry, box_bottom, box_pedestal_separated, outside_staging_xy
+from ground_carry_clearance import pedestal_geometry, box_bottom, box_pedestal_separated, outside_staging_xy, safe_carry_entry
 
 
 class ClearanceTests(unittest.TestCase):
+    def test_entry_bypasses_feeder_dip_instead_of_weakening_clearance(self):
+        poses = [[0, 0, z, 0, 0, 0, 1] for z in [1.2, 1., 1.2, 1., 1.2]]
+        self.assertEqual(safe_carry_entry(range(5), poses, self.size, self.pedestal), 4)
+        self.assertEqual(safe_carry_entry([0, 2, 4], poses, self.size, self.pedestal), 0)
+        with self.assertRaisesRegex(RuntimeError, "no safe"):
+            safe_carry_entry([1, 3], poses, self.size, self.pedestal)
+
     def setUp(self):
         self.pedestal = pedestal_geometry(dict(pedestal=dict(
             translation=[0, 0, 0], size=[1.05, .74, .86], rotation_rpy=[0, 0, -np.pi/2])))

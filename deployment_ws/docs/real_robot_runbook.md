@@ -120,7 +120,7 @@ source scripts/env_jazzy_real.sh
 ./scripts/hardware_pick.sh \
   start_d555:=false start_perception:=false \
   start_planning:=true start_executor:=true start_scene:=true \
-  use_moveit:=true use_rviz:=false execution_backend:=waypoint \
+  use_moveit:=true use_rviz:=false execution_backend:=servo_j \
   scene_tf_config:=/ABS/site/scene_tf.yaml \
   robot_poses_config:=/ABS/site/robot_poses.site.yaml \
   robot_ip:=192.168.0.10 robot_port:=10003
@@ -130,8 +130,8 @@ source scripts/env_jazzy_real.sh
 不要再叠加运行 `jazzy_real.launch.py` 或另一个 `hardware_pick.sh`。
 不启动 Gazebo、假关节发布器或 EtherCAT 控制栈。
 
-这里采用现有部署基线的 waypoint 后端。`hardware_pick_servo_j.sh` 是另一个
-显式选择的测试后端，不是需要多开的窗口；如现场另有已验收的 ServoJ 配置，
+这里采用 ServoJ 后端（20ms 固定周期，lookahead 0.1s），沿用现有 StartServo/PushServoJ 实现。
+`hardware_pick_servo_j.sh` 也选择此后端，并默认关闭笔记本感知；
 应停掉 L1 后再切换，不能同时运行。当前 S20 不用 ServoEsJ。
 
 ### L2：在笔记本检查和操作

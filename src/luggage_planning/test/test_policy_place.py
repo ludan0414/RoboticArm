@@ -128,7 +128,8 @@ class PolicyPlaceTests(unittest.TestCase):
         self.assertEqual(segments[0].name, "place_via_0")
         self.assertAlmostEqual(segments[0].target_pose.position.x, 0.6)
         self.assertTrue(all(s.required_cartesian_fraction == 1.0 for s in segments))
-        self.assertTrue(all(not s.allow_ompl_fallback for s in segments))
+        self.assertTrue(all(s.allow_ompl_fallback for s in segments[:-2]))
+        self.assertTrue(all(not s.allow_ompl_fallback for s in segments[-2:]))
 
     def test_unknown_pick_orientation_and_wrong_frames_fail_closed(self):
         for attribute, value in (("yaw_valid", False), ("frame", "base_link")):

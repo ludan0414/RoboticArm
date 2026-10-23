@@ -70,6 +70,7 @@ def export_profile(bundle):
             exit_indices = np.r_[retreat[-1], returning]
             cycles.append(dict(
                 demo_box_id=row["id"],
+                box_label=row.get("label", row["id"]),
                 expected_demo_input_dims_m=row["input_dims_m"],
                 place_target=dict(frame_id="world", pose_reference="box_center",
                     position_m=row["position_world_m"],
@@ -113,7 +114,7 @@ def export_profile(bundle):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bundle", type=Path,
-                        default=Path(__file__).parent / "demo_data/site55_right160_one")
+                        default=Path(__file__).parent / "demo_data/site_four_colors_right160")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()

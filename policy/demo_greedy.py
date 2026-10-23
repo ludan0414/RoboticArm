@@ -68,5 +68,5 @@ def greedy_sequence(boxes, hull, domain, workspace, progress=print,
                              orientation_world_xyzw=(container_rot * Rotation.from_euler("z", yaw)).as_quat().tolist(),
                              domain_certificate=certificate, route=route))
         placed.append(box)
-        progress(f"GREEDY_PLAN {len(sequence)}/10: {box.id} -> {world_center}, yaw={math.degrees(yaw):.0f}")
+        progress(f"GREEDY_PLAN {len(sequence)}/{len(boxes)}: {box.id} -> {world_center}, yaw={math.degrees(yaw):.0f}")
     return sequence

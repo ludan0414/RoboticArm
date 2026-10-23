@@ -1,4 +1,4 @@
-"""Prepare random inputs, a URDF reachability certificate and a frozen 10-box demo.
+"""Prepare box inputs, a URDF reachability certificate and a frozen greedy demo.
 
 No viewer is created by this command. Replay is a separate process.
 """
@@ -45,7 +45,7 @@ def model_manifest(source_root, scene, top_heights=None, y_positions=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--seed", type=int, default=20261022)
-    parser.add_argument("--input", type=Path, help="existing JSON containing exactly 10 box sizes")
+    parser.add_argument("--input", type=Path, help="existing JSON containing box sizes and optional box_labels")
     parser.add_argument("--output", type=Path, default=Path("demo_data/greedy10"))
     parser.add_argument("--domain-cache", type=Path, default=Path("demo_data/urdf_domain.json"))
     parser.add_argument("--domain-source", type=Path,
@@ -74,6 +74,12 @@ def main():
         shutil.copyfile(scene, args.output / "scene_tf.yaml")
         top_heights = stack_contact_heights(manifest["boxes"])
         y_positions = domain_y_positions(manifest["boxes"])
+        if args.domain_source:
+            # Preserve the reviewed grid while adding actual supported heights
+            # for the new luggage sizes. Greedy still checks physical support.
+            previous_grid = json.loads(args.domain_source.read_text(encoding="utf-8"))["grid"]
+            top_heights = sorted(set(top_heights) | set(previous_grid["top_height_m"]))
+            y_positions = sorted(set(y_positions) | set(previous_grid["y_m"]))
         identity = model_manifest(args.source_root, scene, top_heights, y_positions)
         write_json(args.output / "model_manifest.json", identity)
         hull = Hull.from_config(yaml.safe_load(scene.read_text(encoding="utf-8")))
@@ -117,6 +123,8 @@ def main():
             feeder[0] = -round(required_offset + .02, 3)
         rows = greedy_sequence(manifest["boxes"], hull, domain, workspace,
                                feeder_center=feeder)
+        for row in rows:
+            row["label"] = manifest.get("box_labels", [f"B{i+1}" for i in range(len(manifest["boxes"]))])[row["input_index"]]
         plan = dict(schema_version=1, policy="greedy_back_to_front", seed=manifest.get("seed"),
                     feeder_center_container_door_floor_m=feeder,
                     position_frame="world", route_frame="container_door_floor", sequence=rows)
@@ -129,7 +137,7 @@ def main():
         freeze_bundle(args.output)
         write_json(args.output / "prepare_result.json", dict(success=True, stage="READY_FOR_REPLAY",
                    boxes=len(rows), elapsed_sec=time.monotonic() - started))
-        print(f"当前阶段: READY_FOR_REPLAY | 10/10 | {args.output}", flush=True)
+        print(f"当前阶段: READY_FOR_REPLAY | {len(rows)}/{len(manifest['boxes'])} | {args.output}", flush=True)
         return 0
     except BaseException as exc:
         write_json(args.output / "prepare_result.json", dict(success=False, failed_stage=stage,

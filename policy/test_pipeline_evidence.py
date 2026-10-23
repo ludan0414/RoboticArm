@@ -9,6 +9,17 @@ from verify_pick_place_run import BOX_STAGES, verify
 
 
 class EvidenceTests(unittest.TestCase):
+    def test_adjacent_phase_repeat_is_idempotent_but_reentry_is_not(self):
+        events = [json.loads(line) for line in (self.path / "stages.jsonl").read_text().splitlines()]
+        index = next(i for i, e in enumerate(events) if e["stage"] == "CARRY")
+        events.insert(index + 1, dict(stage="CARRY", box_id="B1"))
+        (self.path / "stages.jsonl").write_text("\n".join(json.dumps(e) for e in events))
+        self.assertTrue(verify(self.path)["success"])
+        events.insert(index + 1, dict(stage="RETURN", box_id="B1"))
+        (self.path / "stages.jsonl").write_text("\n".join(json.dumps(e) for e in events))
+        with self.assertRaisesRegex(ValueError, "wrong stage order"):
+            verify(self.path)
+
     def test_ik_tolerance_change_does_not_reuse_wrong_cached_decision(self):
         from newton_ik_planner import NewtonIKWorkspace
         run = object.__new__(NewtonIKWorkspace)

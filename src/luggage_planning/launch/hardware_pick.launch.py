@@ -283,10 +283,10 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "execution_backend",
-                default_value="waypoint",
+                default_value="servo_j",
                 description=(
-                    "Real executor backend. Production pick stays waypoint; "
-                    "servo_j is opt-in for hardware gates only."
+                    "Real executor backend. ServoJ streams the timed trajectory; "
+                    "waypoint remains an explicit compatibility override."
                 ),
             ),
             DeclareLaunchArgument(

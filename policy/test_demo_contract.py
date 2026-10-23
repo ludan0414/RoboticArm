@@ -4,10 +4,26 @@ import tempfile
 import unittest
 
 from demo_contract import (check_bundle, freeze_bundle, generate_boxes, write_json,
-                           stack_contact_heights)
+                           stack_contact_heights, load_box_input)
 
 
 class DemoContractTests(unittest.TestCase):
+    def test_four_labeled_boxes_are_complete_without_partial_opt_in(self):
+        with tempfile.TemporaryDirectory() as name:
+            folder = Path(name)
+            self.fixture(folder)
+            inputs = dict(boxes=[[.55, .36, .23], [.67, .43, .26], [.55, .36, .23], [.59, .37, .24]],
+                          box_labels=["blue", "black", "grey", "red"])
+            write_json(folder / "input.json", inputs)
+            self.assertEqual(load_box_input(folder / "input.json")["box_labels"], inputs["box_labels"])
+            write_json(folder / "plan.json", dict(sequence=[dict(input_index=i) for i in [1, 3, 0, 2]]))
+            freeze_bundle(folder)
+            self.assertEqual(len(check_bundle(folder)["sequence"]), 4)
+            inputs["box_labels"].pop()
+            write_json(folder / "input.json", inputs)
+            with self.assertRaises(ValueError):
+                load_box_input(folder / "input.json")
+
     def test_partial_replay_requires_explicit_opt_in_and_valid_subset(self):
         with tempfile.TemporaryDirectory() as temp:
             folder=Path(temp)

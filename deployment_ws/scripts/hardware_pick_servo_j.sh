@@ -6,8 +6,8 @@
 #   ./scripts/hardware_pick_servo_j.sh
 #   ./scripts/hardware_pick_servo_j.sh use_rviz:=true
 #
-# Previous all-in-one waypoint pick is unchanged:
-#   ./scripts/hardware_pick.sh
+# Explicit waypoint compatibility mode:
+#   ./scripts/hardware_pick.sh execution_backend:=waypoint
 #
 # Laptop-only ServoJ (no Orin): keep local D555 + YOLO
 #   ./scripts/hardware_pick_servo_j.sh start_d555:=true start_perception:=true
@@ -77,8 +77,8 @@ if [[ "$has_perception" == false ]]; then
   injected+=("start_perception:=false")
 fi
 
-echo "hardware_pick_servo_j: backend=servo_j (opt-in). Default sensors/YOLO off (Orin owns them)."
-echo "Previous waypoint test: ./scripts/hardware_pick.sh"
+echo "hardware_pick_servo_j: backend=servo_j. Default sensors/YOLO off (Orin owns them)."
+echo "Waypoint override: ./scripts/hardware_pick.sh execution_backend:=waypoint"
 echo "Laptop subscribe: /camera/d555/... /livox/lidar /luggage/preprocessed/... /luggage/semantic/yolo_detections and DetectLuggage."
 
 exec "$PICK" "${injected[@]}" "${launch_args[@]}"

@@ -28,10 +28,17 @@ Numbers above illustrate the schema; they are not a measured site target.
 `clearance_m` defaults to 0.15 and must be at least 0.05. It offsets pre-place
 and retreat in world +Z. Each optional `via_box_poses` item has `position_m`
 and `orientation_xyzw` and is executed in order before pre-place. Use these
-to retain the policy's doorway/cargo routing. All Cartesian segments require
-fraction 1.0 and disable OMPL fallback. Without via poses, the first move to
-pre-place is a MoveIt pose goal. With via poses, those moves and pre-place are
-Cartesian and cannot silently replace the policy route with an OMPL route.
+to retain the policy's doorway/cargo routing. Cartesian segments require
+fraction 1.0; a partial trajectory is never executed. Via and pre-place segments
+may fall back to a complete collision-checked MoveIt pose-goal plan with the
+payload attached. This can depart from the Cartesian chord and is recorded as
+an OMPL fallback. Without via poses, pre-place is already a MoveIt pose goal.
+Final descent and retreat remain Cartesian with no OMPL fallback. A partial
+final descent is replanned at half and quarter interpolation step before
+failing; no partial prefix is executed, and no release occurs after failure.
+Carry errors include the failing segment name. A fraction alone cannot tell
+whether the cause was IK, collision, or a singularity; preserve the boundary
+trace when diagnosing a real-robot failure.
 
 The selected successful suction candidate defines the actual grasp, including
 off-centre contact and its orientation. The adapter computes

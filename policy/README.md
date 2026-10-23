@@ -1,6 +1,9 @@
 # Newton 集装箱粗仿真
 
-## 已查看并用于当前真机部署的单箱路线
+当前四色四箱入口：`python run_four_box_demo.py`，详见本文末尾 Four-color luggage loading replay。
+真机默认 profile 对应四色四箱；下列单箱与十箱内容保留作历史回放。
+
+## 历史单箱路线
 
 源包 `demo_data/site55_right160_one/`：基座右侧 `(-1.6,0)` 地面上料，
 先在底座外抬起/收臂，再保持箱底高于底座顶面至少 15cm 搬运，附加 5cm 底座净空检查。
@@ -10,7 +13,7 @@
 python replay_prepared_demo.py --bundle demo_data/site55_right160_one --allow-partial --manual-pick
 ```
 
-默认真机 profile 现在从这个单箱包导出；成功后归位并 COMPLETE。
+此前的单箱真机 profile 从这个包导出；成功后归位并 COMPLETE。
 真机重新规划工具/箱体位姿，不播放这份仿真关节数组，仿真检查也不等于真机轨迹已验证。
 下面保留的十箱包和入口仍可单独回放。
 
@@ -28,7 +31,7 @@ Newton 使用已录制的关节路径，真实 MoveIt 解可能不同，因此�
 转姿和短位移会放大这个比例，它不能作为独立的轨迹质量或机械限位判据。
 真机 rad/m 拒绝分支已删除，旧参数正值也只作诊断参考；机械限位、碰撞及腕部检查独立保留。
 
-## 当前箱单：十个 55×35×20 cm 箱子
+## 历史箱单：十个 55×35×20 cm 箱子
 
 按现场手头箱子的尺寸，当前已生成轨迹的输入为
 `demo_data/inputs/identical_55x35x20_10.json`：十箱全部 `[0.55,0.35,0.20] m`，
@@ -462,3 +465,30 @@ python .\online_packing_newton.py --samples .\online_packing_ik_luggage_maxface1
 IK 候选生成先按 S20 URDF 的肩部到末端保守臂展半径，解析求出每个 y/z 层对应的 x 区间，只在区间内生成候选；整条笛卡尔路线也会先做球形包络检查，明显超出臂展的路线不会逐点跑 IK。空场景第一箱按门边角落优先，只需找到一个有效落位即可。baseline 发现直接放置可行时立即提交，不再继续搬移搜索。IK 求解删掉相同的重复初始种子及额外的 ±π 盲目重试。这个球形范围只是快速剪枝，区间内仍须通过严格 IK 与 Newton 网格碰撞检查。`--ik-x-step` 只控制区间内候选采样密度。
 
 严格 IK 的历史实测（RTX 5060 Laptop GPU，Warp 缓存已建立）中，同尺寸首箱曾耗时 45--57 秒；本轮移除重复 IK 种子后，同尺寸首箱实测 34.0 秒（seed 8，1 箱，规划部分）。单箱首次规划还包含很多不可达候选的严格路径搜索，后续应继续用 MoveIt 离线可达性图或对空场景入口姿态预缓存，避免每次重新发现同一工作空间边界。严格 IK 模式目前仍不适合直接放进控制周期。
+# Four-color luggage loading replay
+
+`demo_inputs/site_four_colors.json` contains blue 55×36×23, black 67×43×26,
+grey 55×36×23 and red 59×37×24 cm. The greedy planner may reorder them.
+The replay uses the prepared order, colors the boxes, and displays the physical
+color and dimensions beside Start Pick. Pickup remains at base (-1.6, 0), on
+the floor; the observation point is raised to base height.
+
+```powershell
+conda activate newton-rope
+cd D:\Programming\RoboticArm\policy
+python run_four_box_demo.py
+```
+
+The command replays the checked bundle; if it is absent, it prepares the ground
+connector from the prepared inside-cargo bundle before opening a window.
+`--auto` skips the per-box Pick button. `--prepare-only` saves motions without
+opening a viewer. This is kinematic/collision validation, not a dynamics test
+or confirmation that a live MoveIt plan has succeeded.
+
+To regenerate in new directories (existing recordings are never overwritten):
+
+```powershell
+python prepare_greedy_demo.py --input demo_inputs/site_four_colors.json --output demo_data/new_four_inside --domain-source demo_data/site55_greedy10/domain.json --scene-config ../deployment_ws/config/scene_tf.loading_site.yaml
+python run_four_box_demo.py --base demo_data/new_four_inside --bundle demo_data/new_four_ground --prepare-only
+python export_hardware_loading_profile.py --bundle demo_data/new_four_ground --output ../deployment_ws/config/loading_cycle.site.template.json --force
+```

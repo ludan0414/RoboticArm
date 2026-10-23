@@ -2,8 +2,9 @@
 
 
 class ManualPickGate:
-    def __init__(self, total):
+    def __init__(self, total, labels=None):
         self.total = total
+        self.labels = labels or {}
         self.number = 0
         self.box_id = ""
         self.stage = "STARTING"
@@ -31,6 +32,7 @@ class ManualPickGate:
         imgui.set_next_window_size(imgui.ImVec2(350, 220), imgui.Cond_.first_use_ever)
         if imgui.begin("Loading control"):
             imgui.text(f"Box {self.number}/{self.total}   {self.box_id}")
+            imgui.text("Load: " + self.labels.get(self.box_id, self.box_id))
             imgui.text("WAITING FOR PICK" if self.waiting else self.stage)
             imgui.separator()
             message = ("Box placed? Click Start Pick." if self.waiting else

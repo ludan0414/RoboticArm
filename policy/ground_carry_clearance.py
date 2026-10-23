@@ -35,6 +35,16 @@ def box_bottom(box_pose, box_size):
     return float(box_pose[2] - np.abs(rotation[2]) @ (np.asarray(box_size) / 2))
 
 
+def safe_carry_entry(indices, poses, box_size, pedestal, margin_m=.06):
+    """Bypass an unsafe feeder prefix; the retained suffix must stay clear."""
+    unsafe = [int(i) for i in indices if not box_pedestal_separated(
+        poses[i], box_size, pedestal, margin_m)]
+    suffix = [int(i) for i in indices if not unsafe or i > max(unsafe)]
+    if not suffix:
+        raise RuntimeError("no safe source carry entry")
+    return suffix[0]
+
+
 def outside_staging_xy(feeder_xy, pedestal, box_size):
     """Retract an extended arm outside the pedestal before the high lift.
 

@@ -115,10 +115,10 @@ class HardwarePickLaunchTest(unittest.TestCase):
         )
         self.assertIn("sim_poses =", src)
 
-    def test_execution_backend_stays_waypoint_and_forwards_servo_j(self):
+    def test_execution_backend_defaults_servo_j_and_forwards_settings(self):
         src = LAUNCH.read_text(encoding="utf-8")
         self.assertIn('"execution_backend"', src)
-        self.assertIn('default_value="waypoint"', src)
+        self.assertIn('default_value="servo_j"', src)
         self.assertIn('"servo_j_servo_time"', src)
         self.assertIn('"servo_j_lookahead_time"', src)
         self.assertIn(
@@ -129,7 +129,6 @@ class HardwarePickLaunchTest(unittest.TestCase):
             '"servo_j_servo_time": LaunchConfiguration("servo_j_servo_time")',
             src,
         )
-        self.assertNotIn('default_value="servo_j"', src)
 
 
 class MotionExecutorIkFallbackTest(unittest.TestCase):

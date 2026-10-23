@@ -417,9 +417,10 @@ class MotionExecutor:
                     why = plan.reason
                 else:
                     why = "cartesian %.3f < %.3f" % (
-                        fraction, self._min_fraction)
-                if (segment_msg.allow_ompl_fallback
-                        and required <= self._min_fraction):
+                        fraction, required)
+                # A complete Cartesian requirement rejects partial execution;
+                # it does not prohibit a separately planned complete pose goal.
+                if segment_msg.allow_ompl_fallback:
                     self._notify(feedback_cb, "planning", segment_msg.name,
                                  fraction, "%s; OMPL fallback" % why)
                     fallback = self._run_pose_target(
@@ -439,8 +440,8 @@ class MotionExecutor:
                         False, "PLACE_PATH_WRIST_SINGULAR %s" % why, fraction)
                 return self._result(
                     False,
-                    "cartesian fraction %.3f below %.3f and no OMPL fallback"
-                    % (fraction, required),
+                    "%s: cartesian fraction %.3f below %.3f and no OMPL fallback"
+                    % (segment_msg.name, fraction, required),
                     fraction)
             if self._occupancy is not None:
                 ok, sweep_msg = self._occupancy_ok_plan(plan, segment_msg)
@@ -916,6 +917,20 @@ class MotionExecutor:
         response = self._wait_future(future, 15.0)
         if response is None:
             return 0.0, None
+        # Retry the final straight descent with finer interpolation, without
+        # executing any prefix or accepting a shortened path. A geometric
+        # collision will still fail; an IK discretization miss may recover.
+        if segment_msg.name == "place_descend" and float(response.fraction) < 1.0:
+            for scale in (.5, .25):
+                request.max_step = self._max_step * scale
+                self._notify(feedback_cb, "planning", segment_msg.name,
+                             float(response.fraction),
+                             "retry complete descent max_step=%.4f" % request.max_step)
+                retry = self._wait_future(self._cartesian.call_async(request), 15.0)
+                if retry is not None and float(retry.fraction) > float(response.fraction):
+                    response = retry
+                if float(response.fraction) >= 1.0:
+                    break
         fraction = float(response.fraction)
         # Pick locks J6 before the excursion gate. A Cartesian solution
         # may spin the coaxial cup almost half a turn over a few

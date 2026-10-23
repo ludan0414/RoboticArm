@@ -17,7 +17,7 @@ from rclpy.executors import MultiThreadedExecutor
 from hardware_pick_driver import (
     HardwarePickDriver, RosPickSessionPorts, build_argument_parser,
 )
-from luggage_planning.hardware_loading_cycle import LoadingCycle, parse_profile
+from luggage_planning.hardware_loading_cycle import LoadingCycle, parse_profile, loading_box_prompt
 from luggage_planning.pose import MotionSegment
 from luggage_planning.hardware_motion_guard import (HardwareMotionGuard, axis_test_segments,
                                                     quaternion_angle)
@@ -34,13 +34,13 @@ PAGE = """<!doctype html><meta charset="utf-8"><title>Hardware loading</title>
 <p>测试顺序：+X、-X、+Y、-Y、+Z、-Z，每次都复位。请现场确认：+X 向左，+Y 向后，+Z 向上。完成动作不代表已自动验证物理方向。</p>
 <p><button id="start" disabled>初始化归位（可选）</button> <button id="skip" disabled>跳过初始化，从当前位置开始</button></p>
 <p><button id="pick" disabled>开始 Pick</button></p>
-<pre id="status"></pre><p id="error"></p>
+<h2 id="next-box"></h2><pre id="status"></pre><p id="error"></p>
 <p>故障后锁定，不自动松吸或重试。此网页不提供急停，请使用现场实体急停。</p>
 <script>
 let current=null, pending=false;
 const ack=document.getElementById('ack'), a=document.getElementById('start'), s=document.getElementById('skip'), b=document.getElementById('pick'), t=document.getElementById('axes');
 function enable(){a.disabled=s.disabled=pending||!ack.checked||current?.state!=='WAIT_START';b.disabled=pending||!ack.checked||current?.state!=='WAIT_PICKUP_READY';t.disabled=pending||!ack.checked||!['WAIT_START','WAIT_PICKUP_READY'].includes(current?.state);}
-async function refresh(){try{current=await(await fetch('/status')).json();document.getElementById('status').textContent=JSON.stringify(current,null,2);enable();}catch(e){a.disabled=s.disabled=b.disabled=t.disabled=true;}}
+async function refresh(){try{current=await(await fetch('/status')).json();document.getElementById('next-box').textContent=current.next_box_prompt;document.getElementById('status').textContent=JSON.stringify(current,null,2);enable();}catch(e){a.disabled=s.disabled=b.disabled=t.disabled=true;}}
 async function send(command){pending=true;enable();try{const r=await fetch('/command',{method:'POST',headers:{'Content-Type':'application/json','X-Console-Token':'TOKEN'},body:JSON.stringify({command,request_id:current.request_id,schema_version:1,scene_confirmed:ack.checked})});if(!r.ok)throw Error(await r.text());ack.checked=false;document.getElementById('error').textContent='';}catch(e){document.getElementById('error').textContent=e.message;}finally{pending=false;await refresh();}}
 a.onclick=()=>send('initialize');s.onclick=()=>send('skip_initialize');b.onclick=()=>send('pick');t.onclick=()=>send('axis_test');ack.onchange=enable;setInterval(refresh,700);refresh();
 </script>"""
@@ -268,8 +268,10 @@ def main(argv=None):
             if self.path == "/":
                 self.reply(200, PAGE.replace("TOKEN", token), "text/html")
             elif self.path == "/status":
-                self.reply(200, json.dumps(dict(cycle.snapshot(), profile_assumptions=
-                    json.loads(raw_profile).get("assumptions", {}))))
+                snapshot = cycle.snapshot()
+                profile = json.loads(raw_profile)
+                self.reply(200, json.dumps(dict(snapshot, next_box_prompt=loading_box_prompt(profile, snapshot),
+                    profile_assumptions=profile.get("assumptions", {}))))
             else:
                 self.reply(404, '{}')
 

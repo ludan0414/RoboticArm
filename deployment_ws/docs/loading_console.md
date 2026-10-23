@@ -18,12 +18,16 @@
 坐标依据是用户提供的 `deployment_ws/config/scene_tf.loading_site.yaml`：
 底座 yaw `-90°`，面对航空箱时基座 `+X` 向左、`+Y` 向后、`+Z` 向上。
 名义右手边上料点为**基座 `(-1.6, 0)`**，对应 world 约 `(0, 1.6)`；箱底 world `z=0`。
-本次部署默认改为已查看的**单箱** `55×35×20 cm` 路线，源包为
-`policy/demo_data/site55_right160_one/`。观察位 world `z≈0.86`，与基座同高。
+本次部署默认采用**四色四箱**贪心路线，源包为
+`policy/demo_data/site_four_colors_right160/`。顺序是黑色 67×43×26、红色 59×37×24、
+蓝色 55×36×23、灰色 55×36×23 cm。观察位 world `z≈0.86`，与基座同高。
 上料点允许偏移，继续使用原视觉 Pick。成功后保持吸附，按实际抓取变换生成
 外侧抬起 → 在底座外侧收臂 → 抬至箱底高于底座顶面 15cm → 已审核的高位入舱路线。
 附加 5cm 底座箱体净空检查；实际箱体尺寸、抓取偏心和姿态都来自本次检测。
-单箱完成后归位并显示 COMPLETE，不自动重复同一放置目标，避免堆叠覆盖。
+新箱型在原供料位附近较低的路径前缀由高位接驳绕过：先横向到安全入口上方，再垂直下降接原入舱轨迹。
+15cm 高度用于横向接驳；下降和入舱仍保留底座 5cm 余量及完整场景碰撞检查。
+每箱完成后归位，操作台显示下一箱的颜色与尺寸；四箱完成后显示 COMPLETE。
+不自动重复同一放置目标，避免堆叠覆盖。
 航空箱的平移和完整 roll/pitch/yaw 均来自该 YAML，不能再使用此前底座 `+90°` 的配置。
 `assumptions` 保存来源和哈希，并不意味着执行过现场验收。
 O1 的 `orin_perception.sh` 和 L1 的 `hardware_pick.sh` 默认加载上述文件；
@@ -32,9 +36,10 @@ O1 的 `orin_perception.sh` 和 L1 的 `hardware_pick.sh` 默认加载上述文�
 
 - `observe_tool_pose`：工具 `suction_contact_frame` 在现场 `world` 中的等待/观察位，
   单位 m、姿态 xyzw。应能看见地面上料区，并让开人工上料空间。
-- `cycles`：按执行顺序每箱一项，当前默认只有已查看的一箱；启动时冻结整个列表，
+- `cycles`：按执行顺序每箱一项，当前默认四箱；启动时冻结整个列表，
   不在线计算或重读目标。若现场布局不同，先把位姿转换到实际 world。
   `expected_demo_input_dims_m` 仅记录 demo 箱子尺寸，不替代本轮视觉测量或身份校验。
+  `box_label` 标识本次应上料的实体箱子；必须按页面顺序上料，程序没有自动颜色身份识别。
 - `place_target`：箱子中心目标，遵循 [放置接口](policy_place.md)。
   `via_box_poses` 是携箱入舱路径中的箱中心位姿。
 - `exit_tool_poses`：松吸并上退之后，空工具依次经过的退舱位姿。
@@ -128,6 +133,12 @@ python policy/export_hardware_loading_profile.py \
 硬件 launch 的速度/加速度比例降至 15%/10%。这些限制不替代现场方向观察和实体急停。
 
 实体急停是停止手段；网页关闭、Ctrl-C 和 HTTP 均不是急停。
+
+默认执行后端已改为 ServoJ：使用已有 StartServo/PushServoJ，20ms 周期、100ms lookahead。
+这需要更新并重启 L1；旧窗口仍会继续用启动时的后端。需要旧后端时显式传
+`execution_backend:=waypoint`。位置/姿态仍由 MoveIt 规划，ServoJ 负责平滑发送关节轨迹。
+搬运 via/pre-place 可从失败的 Cartesian 规划回退到完整 MoveIt 终点规划；最终下降仍要求
+fraction=1.0，并在失败时尝试更细采样，不执行部分路径、不提前松吸。
 中断执行中的控制台不会追加归位或松吸；需现场明确恢复，保留 journal、trace。
 此调试入口不自动推进感知 tracker 实例生命周期；检测仍返回旧实例时，
 应先按现场感知流程更新。现有身份校验仍生效。

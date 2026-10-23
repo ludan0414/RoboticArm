@@ -11,6 +11,17 @@ from luggage_planning.policy_place import _pose, parse_place_target
 from luggage_planning.pose import MotionSegment
 
 
+def loading_box_prompt(profile, snapshot):
+    """Operator label from the same frozen row that owns the place target."""
+    number = snapshot["next_box"]
+    if number is None:
+        return "全部完成"
+    row = profile["cycles"][number - 1]
+    dimensions = " × ".join("%g" % (v * 100) for v in row.get("expected_demo_input_dims_m", []))
+    return "下一箱 %d/%d：%s（%s cm）" % (number, len(profile["cycles"]),
+        row.get("box_label", row.get("demo_box_id", str(number))), dimensions)
+
+
 def parse_profile(data):
     if (data.get("profile") != "site_commissioning_v1"
             or data.get("frame_id") != "world"

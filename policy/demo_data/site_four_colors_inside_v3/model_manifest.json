@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "urdf_sha256": "79bfc2370959016118b146dbec7691e50f58a062ba18da6d655ff92020a65c9f",
+  "scene_sha256": "c0d1161db91951157164ff741dd84eb79849952ee05c50dcb08e3a959bc88af5",
+  "meshes": {
+    "elfin_humble_ws\\src\\elfin_description\\meshes\\S20\\elfin_base.STL": "eef04b6198369d8e18d0dc778d6211ccb1cac8ff5bcecb1ad5bca3505c916df3",
+    "elfin_humble_ws\\src\\elfin_description\\meshes\\S20\\elfin_link1.STL": "c43382af1bb15ed9394c2643e9b65636f45dda9f780a4fcc06fdcd2ca707ce1c",
+    "elfin_humble_ws\\src\\elfin_description\\meshes\\S20\\elfin_link2.STL": "0e7bae77d8cb9b77688480fa11d3bb124198f0829f9efdaddbee486ff01f9b1d",
+    "elfin_humble_ws\\src\\elfin_description\\meshes\\S20\\elfin_link3.STL": "f2a7efb971c7de962e811bbe27d4ada83cd9b64041440dd38d6e61d7c57f3afe",
+    "elfin_humble_ws\\src\\elfin_description\\meshes\\S20\\elfin_link4.STL": "93f4c05eb3e59f8aa19484d8c5e8babbb361722ddaf0a4c95061905e213760df",
+    "elfin_humble_ws\\src\\elfin_description\\meshes\\S20\\elfin_link5.STL": "dadf1b208b83e920226eb672934a645286ae6322fc9497a65b1af5abdc990b73",
+    "elfin_humble_ws\\src\\elfin_description\\meshes\\S20\\elfin_link6.STL": "e94b6f33c970d7c6e3336873e11f1252b44a5eac1620a72b79975c478a41671e",
+    "elfin_humble_ws\\src\\luggage_gazebo\\models\\airport_container_real\\meshes\\container_collision.stl": "ee2f32572a80f527d66cf03a01d3c93ed1353fbe58252021462e122970102c87",
+    "elfin_humble_ws\\src\\luggage_gazebo\\models\\arm_realsense\\arm_realsense_v1.3.stl": "6b443a3e3b451c2d4707b5f4e6703195bdc6efae54d545753fad16161e0135ba",
+    "elfin_humble_ws\\src\\luggage_gazebo\\models\\suction_panel\\collision\\p01.stl": "3539ecd0dd3e627ea17ecf27f6b565e16141093301a2c6a8b02c311126f0acfa",
+    "elfin_humble_ws\\src\\luggage_gazebo\\models\\suction_panel\\collision\\p02.stl": "0553aa49c0c8fbce8a811386ee0dc6b728c31caef7c3509959fd7db33ced676a",
+    "elfin_humble_ws\\src\\luggage_gazebo\\models\\suction_panel\\collision\\p03.stl": "e7bca547eba2e2c00312b7012c151e85ef5cff7930234efa51f776754932e517",
+    "elfin_humble_ws\\src\\luggage_gazebo\\models\\suction_panel\\collision\\p04.stl": "4e38bcba6d51bddba2f2497c05a12d709effd6b52fb5a076c7090083c75b5a09",
+    "elfin_humble_ws\\src\\luggage_gazebo\\models\\suction_panel\\collision\\p05.stl": "5270958d90e54588f0b5a87cfd7a4c8b3e1cdc717e8e9053308e2cf92f944e81"
+  },
+  "certificate_code_sha256": "cbac858e4bc59cbe8fd99b8a5ea00397c677fdbd7889c12e58743ea681d7c1a3",
+  "collision_code_sha256": "343141e74d798e3dd07eda5630618c0348960329511a7049174d1bfe9770890a",
+  "source_root": "D:\\Programming\\RoboticArm\\policy\\vendor\\roboticarm",
+  "srdf_sha256": "26e3e44b5a14b4ea1deaee6de85b04dfcf1c25a0dc9dab5ad8b099f70d546991",
+  "domain_top_heights_m": [
+    0.2,
+    0.23,
+    0.24,
+    0.26,
+    0.4,
+    0.46,
+    0.47,
+    0.49,
+    0.5,
+    0.6,
+    0.7,
+    0.72,
+    0.73,
+    0.8,
+    0.96,
+    1.0,
+    1.2
+  ],
+  "domain_y_positions_m": [
+    0.28,
+    0.53,
+    0.78,
+    1.03,
+    1.28
+  ],
+  "identity": "7638ce1e2bc1b19bac4337cafafbcd37e82f43e0a45db380eb0550bab857007f"
+}

@@ -1,0 +1,72 @@
+{
+  "success": true,
+  "boxes": 4,
+  "frames": 3228,
+  "max_grasp_drift_m": 7.453113736577457e-08,
+  "scene_recording": {
+    "success": true,
+    "boxes": 4,
+    "frames": 3228,
+    "spawn_order": [
+      "B2",
+      "B4",
+      "B1",
+      "B3"
+    ],
+    "final_poses": [
+      {
+        "id": "B2",
+        "position_error_m": 1.0002760613040885e-06,
+        "orientation_error_rad": 0.0,
+        "spawn_position_world_m": [
+          5.799406153528253e-06,
+          1.600000023841858,
+          0.12999999523162842
+        ],
+        "spawn_frame": 2,
+        "release_frame": 434
+      },
+      {
+        "id": "B4",
+        "position_error_m": 5.02576616284395e-07,
+        "orientation_error_rad": 0.0,
+        "spawn_position_world_m": [
+          5.799406153528253e-06,
+          1.600000023841858,
+          0.11999999731779099
+        ],
+        "spawn_frame": 806,
+        "release_frame": 1285
+      },
+      {
+        "id": "B1",
+        "position_error_m": 5.883455777459553e-07,
+        "orientation_error_rad": 0.0,
+        "spawn_position_world_m": [
+          5.799406153528253e-06,
+          1.600000023841858,
+          0.11500000208616257
+        ],
+        "spawn_frame": 1630,
+        "release_frame": 2114
+      },
+      {
+        "id": "B3",
+        "position_error_m": 2.079793928124074e-06,
+        "orientation_error_rad": 0.00021826172897485157,
+        "spawn_position_world_m": [
+          5.799406153528253e-06,
+          1.600000023841858,
+          0.11500000208616257
+        ],
+        "spawn_frame": 2520,
+        "release_frame": 2957
+      }
+    ]
+  },
+  "copied_original_frames": 1213,
+  "payload_checked_frames": 3228,
+  "checked_frames_count_source": "all recorded frames checked by completed compiler; count recovered from saved recording",
+  "penetration_tolerance_m": 0.001,
+  "original_joint_motion_replayed_exactly": true
+}

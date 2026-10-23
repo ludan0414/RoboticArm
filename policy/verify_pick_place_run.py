@@ -1,6 +1,7 @@
 """Inspect a saved Newton pipeline run without importing Newton or using GPU."""
 import argparse
 import json
+from itertools import groupby
 from pathlib import Path
 
 import numpy as np
@@ -34,8 +35,11 @@ def verify(path):
         max_grasp_drift = 0.0
         for row in plan:
             box_id = row["id"]
-            stages = [event["stage"] for event in events
-                      if event["box_id"] == box_id and event["stage"] in BOX_STAGES]
+            # Multiple motion segments may report the same phase again.
+            # Collapse only adjacent repeats in the unfiltered event stream;
+            # CARRY -> RETURN -> CARRY still remains an invalid transition.
+            phases = [event["stage"] for event in events if event["box_id"] == box_id]
+            stages = [stage for stage, _ in groupby(phases) if stage in BOX_STAGES]
             if stages != BOX_STAGES:
                 raise ValueError(f"{box_id}: wrong stage order {stages}")
             # RESET_HOME already has the next box ID, but that box does not

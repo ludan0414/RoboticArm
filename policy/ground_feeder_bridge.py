@@ -18,7 +18,8 @@ from run_pick_place_pipeline import Pipeline, STAGE_NAMES
 from online_packing_real import Hull
 from roboticarm_newton import DEFAULT_SOURCE
 from newton_ik_planner import tool_down_quaternion
-from ground_carry_clearance import pedestal_geometry, box_bottom, box_pedestal_separated, outside_staging_xy
+from ground_carry_clearance import (pedestal_geometry, box_bottom, box_pedestal_separated,
+                                    outside_staging_xy, safe_carry_entry)
 from verify_pick_place_run import verify
 
 
@@ -104,7 +105,8 @@ class BridgeCompiler(MotionCompiler):
             self.payload_checked_frames += 1
 
     def joint_path(self, start, goal, label):
-        self.enter(label)
+        if self.stage != label:
+            self.enter(label)
         path = ([np.asarray(start), np.asarray(goal)] if not self.validate_motion else
                 plan_joint_approach(start, goal, self.model.joint_limit_lower.numpy()[:6],
                                   self.model.joint_limit_upper.numpy()[:6], self.valid,
@@ -128,6 +130,9 @@ class BridgeCompiler(MotionCompiler):
             self.placed[self.box_id] = self.box_pose.copy()
         if self.validate_motion:
             if not self.valid(self.q):
+                write_json(self.output / "failure_frame.json", dict(stage=self.stage, box_id=self.box_id,
+                    source_frame=index, q=self.q.tolist(), static=self.ik.last_collision_pairs,
+                    payload=self.payload_contact_failures()))
                 raise RuntimeError(f"recorded motion contact at frame {index}")
         else:
             self.refresh(self.q)
@@ -186,7 +191,11 @@ def prepare_bridge(base_folder, output, feeder_xy, *, validate=True, observe_at_
                 run.current_box_size = row["input_dims_m"]
                 run.box_id, run.box_pose, run.attached = row["id"], None, False
                 indices = np.flatnonzero(data["box_id"] == row["id"])
-                start = int(indices[data["stage"][indices] == "CARRY"][0])
+                carry_indices = indices[data["stage"][indices] == "CARRY"]
+                # The inside-demo feeder can pass near the pedestal, outside
+                # the extra ground-carry margin. Bypass that prefix using a
+                # newly checked high connection to its last safe entry rail.
+                start = safe_carry_entry(carry_indices, data["box_pose"], row["input_dims_m"], run.pedestal)
                 end = int(indices[data["stage"][indices] == "VERIFY"][0])
                 dock_q = data["joint_q"][start].copy()
                 dock_box, dock_tool = data["box_pose"][start], data["tool_pose"][start]
@@ -242,9 +251,18 @@ def prepare_bridge(base_folder, output, feeder_xy, *, validate=True, observe_at_
                 run.move([*xy, outer_lift_z], yaw)
                 run.move([*staging_xy, outer_lift_z], yaw)
                 run.move([*staging_xy, high_contact[2]], yaw)
+                # A larger payload can have a low original feeder/dock pose.
+                # Complete the lateral transfer above the pedestal first,
+                # then descend vertically into that reviewed docking pose.
+                high_dock = dock_tool[:3].copy()
+                high_dock[2] += max(0.0, run.high_carry_bottom_z + .005
+                                   - box_bottom(dock_box, run.current_box_size))
+                high_dock_q = run.solve(high_dock, yaw)
                 run.high_carry = True
-                connector = run.joint_path(run.q.copy(), dock_q, "CARRY")
+                connector = run.joint_path(run.q.copy(), high_dock_q, "CARRY")
                 run.high_carry = False
+                run.move(dock_tool[:3], yaw)
+                docking = run.joint_path(run.q.copy(), dock_q, "CARRY")
                 if validate and np.linalg.norm(run.box_pose[:3]-dock_box[:3]) > .006:
                     raise RuntimeError("connector does not match original feeder")
                 first_output_frame = len(run.history)
@@ -263,6 +281,7 @@ def prepare_bridge(base_folder, output, feeder_xy, *, validate=True, observe_at_
                 run.events.flush()
                 run.hold()
                 bridges.append(dict(id=row["id"], carry_joint_path=connector,
+                    docking_joint_path=docking,
                     empty_return_joint_path=empty_return, original_frame_range=[start,end]))
                 bridges[-1]["reused_output_frame_range"] = [first_output_frame, first_output_frame+end-start]
                 write_json(output/"bridges.json", bridges)
