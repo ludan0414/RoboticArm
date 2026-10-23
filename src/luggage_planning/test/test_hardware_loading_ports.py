@@ -12,6 +12,8 @@ from luggage_planning.pose import MotionSegment, Point, Pose, Quaternion
 def load_console():
     driver_module = ModuleType("hardware_pick_driver")
     class BaseDriver:
+        def _detection_view(self, box):
+            return box.detection
         def attach_scene_box(self):
             self.events.append("attach")
             return True, "attached"
@@ -79,10 +81,96 @@ class AdapterTests(unittest.TestCase):
         self.ports.execute=lambda segments: captured.append(segments)
         self.ports.return_observe(0)
         self.ports.return_observe(0)
-        for segments in captured:
-            self.assertIs(segments[0],exit_segment)
-            self.assertAlmostEqual(segments[-1].target_pose.position.y,.8)
-            self.assertAlmostEqual(segments[-1].target_pose.position.z,.66)
+        self.assertEqual([s[0].name for s in captured],
+                         ['exit','return_pick_wait','return_observe']*2)
+        for segments in (captured[2], captured[5]):
+            self.assertAlmostEqual(segments[0].target_pose.position.y,.8)
+            self.assertAlmostEqual(segments[0].target_pose.position.z,.66)
+
+    def test_configured_height_replaces_visual_height_and_preserves_contact_top(self):
+        from dataclasses import make_dataclass
+        DetectionView = make_dataclass('DetectionView',
+            ['stamp','frame','yaw_valid','box_xyz','box_size'])
+        driver = self.module.CommissioningDriver()
+        driver._configured_payload_size = (.55,.35,.20)
+        driver.get_logger = lambda: SimpleNamespace(info=lambda message: None)
+        observed = DetectionView(stamp=10, frame='world', yaw_valid=True,
+            box_xyz=(.1,1.6,.1), box_size=(.47,.294,.24))
+        box = SimpleNamespace(detection=observed,
+            top_surface_pose=Pose(Point(.1,1.6,.22),Quaternion()))
+        result = driver._detection_view(box)
+        self.assertEqual(result.box_size,(.55,.35,.20))
+        self.assertAlmostEqual(result.box_xyz[2],.12)
+        self.assertAlmostEqual(result.box_xyz[2]+result.box_size[2]/2,.22)
+        self.assertEqual(observed.box_size,(.47,.294,.24))
+
+    def test_place_and_release_check_use_same_configured_target_with_support_gap(self):
+        from luggage_planning.policy_place import PlaceTarget, measured_grasp_transform
+        module = self.module
+        driver = module.CommissioningDriver()
+        box = Pose(Point(0,1.6,.1),Quaternion())
+        tool = Pose(Point(0,1.6,.2),Quaternion(1,0,0,0))
+        driver._measured_grasp = measured_grasp_transform(box,tool)
+        target = PlaceTarget(Pose(Point(-1,.5,.63),Quaternion()),.15,
+                             reference_box_size_m=(.55,.35,.20))
+        driver._args = SimpleNamespace(place_target_data=target)
+        driver.lookup_pose = lambda *args,**kwargs: tool
+        driver.get_logger = lambda: SimpleNamespace(info=lambda message: None)
+        detection=SimpleNamespace(frame='world',yaw_valid=True,box_size=(.55,.35,.20))
+        segments=driver.prepare_place_segments([],detection,SimpleNamespace(frame='world'))
+        descend=next(s for s in segments if s.name=='place_descend')
+        self.assertAlmostEqual(descend.target_pose.position.z,.735)
+        self.assertAlmostEqual(driver._effective_place_target.box_pose.position.z,.635)
+        self.assertAlmostEqual(target.box_pose.position.z,.63)
+        driver.lookup_pose=lambda *args,**kwargs: descend.target_pose
+        self.assertTrue(driver.validate_place_pose()[0])
+
+    def test_breadcrumb_records_actual_pick_stop_and_excludes_descent(self):
+        driver=self.module.CommissioningDriver()
+        actual=Pose(Point(.1,1.6,.6),Quaternion(1,0,0,0))
+        calls=[]
+        def lookup(*args,**kwargs):
+            calls.append(kwargs)
+            return actual
+        driver.lookup_pose=lookup
+        driver.record_completed_motion(MotionSegment(name='pick_retreat'))
+        driver.record_completed_motion(MotionSegment(name='place_descend'))
+        self.assertEqual(calls,[dict(fresh=True)])
+        self.assertEqual(driver._pick_return_path.poses,[actual])
+
+    def test_prepare_reverses_successful_carry_to_pick_stop_before_observe(self):
+        from luggage_planning.pick_return_path import PickReturnPath
+        path = self.driver._pick_return_path = PickReturnPath()
+        for name,x in [('pick_retreat',1),('ground_entry_high_lift',2),('pre_place',3),
+                       ('place_descend',4),('place_retreat',3)]:
+            path.record(name,Pose(Point(x,0,1),Quaternion()))
+        self.ports.prepare_current = lambda: None
+        self.ports.resolve_return_pose = lambda: None
+        captured=[]
+        self.ports.execute=lambda segments: captured.extend(segments)
+        self.ports.prepare()
+        self.assertEqual([s.target_pose.position.x for s in captured[:-1]],[3,2,1])
+        self.assertEqual(captured[-1].name,'initialize_observe')
+        self.assertEqual(path.poses,[])
+        self.assertTrue(all(s.required_cartesian_fraction==1 for s in captured[:-1]))
+
+    def test_failed_reverse_preserves_waypoint_and_blocks_observe(self):
+        from luggage_planning.pick_return_path import PickReturnPath
+        path=self.driver._pick_return_path=PickReturnPath()
+        path.record('pick_retreat',Pose(Point(1,0,1),Quaternion()))
+        path.record('pre_place',Pose(Point(3,0,1),Quaternion()))
+        self.ports.prepare_current=lambda: None
+        self.ports.resolve_return_pose=lambda: None
+        names=[]
+        def execute(segments):
+            names.extend(s.name for s in segments)
+            if segments[0].name=='return_pick_stop_0':
+                raise RuntimeError('blocked')
+        self.ports.execute=execute
+        with self.assertRaisesRegex(RuntimeError,'blocked'):
+            self.ports.prepare()
+        self.assertEqual(names,['return_pick_stop_1','return_pick_stop_0'])
+        self.assertEqual(len(path.poses),1)
 
     def test_final_pose_check_refuses_yaw_error_before_release(self):
         from luggage_planning.policy_place import measured_grasp_transform

@@ -27,6 +27,13 @@ no-GT rule).
 Catalog suitcase WDH is **spawn-only** (`pickup_box_spawner`). It must not
 fill `DetectedLuggage.height`, MoveIt pickup AABBs, or `ComputePlacement`.
 
+The operator explicitly selects configured dimensions for the separate real-cell
+`site_commissioning_v1` console (`payload_geometry_source=configured_cycle`).
+That console may build its MoveIt payload from the current cycle's configured
+WDH and the visual pickup top/yaw. It labels the source as configured, retains
+the original detector observation, and does not certify measured occupancy or
+alter production `DetectLuggage` / `ComputePlacement` / cargo-map contracts.
+
 ## Forbidden successive priors
 
 The following loop is a defect wherever it drives those APIs:

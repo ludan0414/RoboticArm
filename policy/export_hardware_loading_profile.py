@@ -93,6 +93,7 @@ def export_profile(bundle):
               for name in ("plan.json", "trajectory.npz", "scene_tf.yaml")}
     return dict(profile="site_commissioning_v1", frame_id="world",
                 tool_frame="suction_contact_frame",
+                payload_geometry_source="configured_cycle",
                 return_pose_adjustment=dict(offset_base_m=[.8, 0., -.2],
                     camera_optical_frame="d555_color_optical_frame"),
                 assumptions=dict(
@@ -105,7 +106,7 @@ def export_profile(bundle):
                     base_world_translation_m=base_position.tolist(),
                     base_world_yaw_rad=float(base_rotation.as_euler("xyz")[2]),
                     hardware_motion_validated=False,
-                    expected_dims_are_detection_inputs=False),
+                    expected_dims_are_detection_inputs=True),
                 motion_safety=dict(schema_version=1,
                     expected_base_world_pose=pose_dict(np.r_[base_position, base_rotation.as_quat()]),
                     expected_container_world_pose=pose_dict(np.r_[container["translation"],

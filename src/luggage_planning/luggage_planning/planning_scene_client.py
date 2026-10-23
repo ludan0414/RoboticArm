@@ -165,6 +165,10 @@ def summarize_planning_scene(scene):
         "world_objects": [summarize_collision_object(obj) for obj in objects],
         "world_object_ids": [str(obj.id) for obj in objects],
         "attached": [str(item.object.id) for item in attached if item.object],
+        "attached_geometry": [dict(
+            link=item.link_name, touch_links=list(item.touch_links),
+            object=summarize_collision_object(item.object))
+            for item in attached if item.object],
         "robot_joints": {"name": names, "position": positions},
         "octomap": octo_info,
     }

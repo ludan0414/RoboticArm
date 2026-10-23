@@ -157,6 +157,9 @@ class RosPickSessionPorts:
             message=message, fraction=float(getattr(result, "fraction", -1.0)),
             target=vars(segment.target_pose.position), orientation=vars(segment.target_pose.orientation),
             settle_json=str(getattr(result, "settle_json", "") or "")))
+        observer = getattr(self._driver, "record_completed_motion", None)
+        if ok and observer is not None:
+            observer(segment)
         return SegmentOutcome(
             ok=ok, message=message,
             fraction=float(getattr(result, "fraction", -1.0) or 0.0),

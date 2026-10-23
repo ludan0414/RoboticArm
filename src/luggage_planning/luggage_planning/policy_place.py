@@ -41,6 +41,8 @@ class PlaceTarget:
     box_pose: Pose
     clearance_m: float
     via: tuple = ()
+    # Frozen policy input dimensions; never a replacement for measured geometry.
+    reference_box_size_m: tuple = ()
 
 
 def parse_place_target(data):

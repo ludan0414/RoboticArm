@@ -3,7 +3,11 @@
   "frame_id": "world",
   "tool_frame": "suction_contact_frame",
   "return_pose_adjustment": {
-    "offset_base_m": [0.8, 0.0, -0.2],
+    "offset_base_m": [
+      0.8,
+      0.0,
+      -0.2
+    ],
     "camera_optical_frame": "d555_color_optical_frame"
   },
   "assumptions": {
@@ -31,7 +35,7 @@
     ],
     "base_world_yaw_rad": -1.5708,
     "hardware_motion_validated": false,
-    "expected_dims_are_detection_inputs": false
+    "expected_dims_are_detection_inputs": true
   },
   "motion_safety": {
     "schema_version": 1,
@@ -5531,5 +5535,6 @@
         }
       ]
     }
-  ]
+  ],
+  "payload_geometry_source": "configured_cycle"
 }

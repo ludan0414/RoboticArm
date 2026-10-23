@@ -24,6 +24,8 @@ from luggage_planning.release_confirmation import wait_for_release
 from luggage_planning.return_pose import (adjusted_return_pose, DEFAULT_OFFSET_BASE_M,
                                          DEFAULT_CAMERA_FRAME)
 from luggage_planning.placement_approach import lower_final_approach
+from luggage_planning.placement_payload import release_above_support
+from luggage_planning.pick_return_path import PickReturnPath
 from luggage_planning.hardware_motion_guard import (HardwareMotionGuard, axis_test_segments,
                                                     quaternion_angle)
 from luggage_planning.pose import Point, Pose, Quaternion
@@ -203,6 +205,32 @@ class CommissioningDriver(HardwarePickDriver):
     # Rigid sealed-grasp estimate must reach these bounds before release.
     place_position_tolerance_m = .01
     place_orientation_tolerance_rad = math.radians(2)
+
+    def _detection_view(self, box):
+        """Commissioning only: operator-configured dimensions, visual top/yaw.
+
+        Preserve the base driver's observation authorization and candidates.
+        Re-centre the configured box below the observed top, so the collision
+        top and the suction contact describe the same surface.
+        """
+        detection = super()._detection_view(box)
+        size = getattr(self, '_configured_payload_size', None)
+        if not size:
+            raise RuntimeError('configured cycle payload dimensions missing')
+        centre = (detection.box_xyz[0], detection.box_xyz[1],
+                  float(box.top_surface_pose.position.z) - size[2]/2)
+        self.get_logger().info('payload geometry source=configured_cycle size=%s visual_size=%s' % (
+            size, detection.box_size))
+        return replace(detection, box_xyz=centre, box_size=tuple(size))
+
+    def record_completed_motion(self, segment):
+        if not (segment.name == 'pick_retreat' or segment.name == 'pre_place'
+                or segment.name.startswith(('ground_entry_', 'place_pickup_connect_', 'place_via_'))):
+            return
+        if not hasattr(self, '_pick_return_path'):
+            self._pick_return_path = PickReturnPath()
+        pose = self.lookup_pose('world', 'suction_contact_frame', fresh=True)
+        self._pick_return_path.record(segment.name, pose)
     def attach_scene_box(self):
         """Freeze actual sealed-contact TF before the successful pick retreat."""
         from luggage_planning.policy_place import measured_grasp_transform
@@ -210,7 +238,7 @@ class CommissioningDriver(HardwarePickDriver):
         self._sealed_grasp_record = None
         if self._scene_box is None:
             return False, "measured scene box missing at seal"
-        xyz, quat, _size = self._scene_box
+        xyz, quat, size = self._scene_box
         tool = self.lookup_pose("world", "suction_contact_frame", fresh=True)
         grasp = measured_grasp_transform(Pose(Point(*xyz), Quaternion(*quat)), tool)
         ok, message = super().attach_scene_box()
@@ -218,6 +246,7 @@ class CommissioningDriver(HardwarePickDriver):
             self._measured_grasp = grasp
             self._sealed_grasp_record = dict(
                 box_pose=dict(position=xyz, orientation=quat),
+                collision_box_size_m=size, geometry_source='configured_cycle',
                 tool_pose=dict(position=vars(tool.position), orientation=vars(tool.orientation)),
                 offset_box_m=grasp[0], relative_orientation=vars(grasp[1]))
         return ok, message
@@ -229,7 +258,7 @@ class CommissioningDriver(HardwarePickDriver):
             return False, "sealed grasp unavailable"
         tool = self.lookup_pose("world", "suction_contact_frame", fresh=True)
         estimated = box_pose_from_grasp(tool, grasp)
-        target = self._args.place_target_data.box_pose
+        target = getattr(self, '_effective_place_target', self._args.place_target_data).box_pose
         position_error = math.dist(tuple(vars(estimated.position).values()),
                                    tuple(vars(target.position).values()))
         orientation_error = quaternion_angle(estimated.orientation, target.orientation)
@@ -290,7 +319,11 @@ class CommissioningDriver(HardwarePickDriver):
         if detection is not None and candidate is not None:
             if grasp is None:
                 raise RuntimeError("actual sealed-contact TF missing; refusing nominal grasp placement")
-            target = lower_final_approach(self._args.place_target_data)
+            target = release_above_support(self._args.place_target_data)
+            self._effective_place_target = target
+            self.get_logger().info('placement payload height: configured=%s reference=%s target=%s' % (
+                detection.box_size, target.reference_box_size_m, vars(target.box_pose.position)))
+            target = lower_final_approach(target)
             segments = build_place_segments(target, detection, candidate, measured_grasp=grasp)
         config = getattr(self, "carry_entry_config", None)
         if config is not None:
@@ -319,7 +352,7 @@ class CommissioningDriver(HardwarePickDriver):
         ok, message = super().remove_scene_box()
         if not ok or geometry is None:
             return False, message or "missing measured payload geometry"
-        target = self._args.place_target_data.box_pose
+        target = getattr(self, '_effective_place_target', self._args.place_target_data).box_pose
         # This is an EXPECTED placement, never a measured cargo-map commit.
         scene = self._scene_client()
         # Only suction contact links may initially touch the released proxy.
@@ -452,8 +485,29 @@ class HardwarePorts:
     def prepare(self):
         self.prepare_current()
         self.resolve_return_pose()
+        self.return_to_pick_stop()
         self.execute([MotionSegment(name="initialize_observe", type="pose_target",
                                     target_pose=self.observe)])
+
+    def return_to_pick_stop(self):
+        path = getattr(self.driver, '_pick_return_path', None)
+        if path is not None and path.poses:
+            while path.poses:
+                segment = path.next_segment()
+                lookup = getattr(self.driver, 'lookup_pose', None)
+                actual = lookup('world', 'suction_contact_frame', fresh=True) if lookup else None
+                at_target = (actual is not None and math.dist(
+                    tuple(vars(actual.position).values()),
+                    tuple(vars(segment.target_pose.position).values())) <= .003
+                    and quaternion_angle(actual.orientation, segment.target_pose.orientation) <= math.radians(1))
+                if not at_target:
+                    self.execute([segment])
+                path.settled()
+        else:
+            # Before a pick has completed, use the original configured pickup
+            # waiting pose as the staging waypoint, before the adjusted camera pose.
+            self.execute([MotionSegment(name='return_pick_wait', type='pose_target',
+                                        target_pose=self.nominal_observe)])
 
     def prepare_current(self):
         """Readiness checks only: no observe move, detection or vacuum command."""
@@ -470,6 +524,12 @@ class HardwarePorts:
         self.driver.validate_scene_frame()
         self.execute([])  # A held box or unknown vacuum state blocks a new pick.
         self.driver._args.place_target_data = self.cycles[index][0]
+        self.driver._configured_payload_size = self.cycles[index][0].reference_box_size_m
+        if not self.driver._configured_payload_size:
+            raise RuntimeError('cycle needs expected_demo_input_dims_m for configured collision geometry')
+        self.driver._pick_return_path = PickReturnPath()
+        if hasattr(self.driver, '_effective_place_target'):
+            del self.driver._effective_place_target
         self.driver._measured_grasp = None
         self.driver.placed_proxy_id = "expected_placed_%s_%d" % (self.session, index)
         # Separate immutable trace per box, never overwrite a previous fault.
@@ -484,9 +544,16 @@ class HardwarePorts:
             raise RuntimeError("placed collision permissions: " + message)
 
     def return_observe(self, index):
-        segments = list(self.cycles[index][1])
-        segments[-1] = replace(segments[-1], target_pose=self.resolve_return_pose())
-        self.execute(segments)
+        target = self.resolve_return_pose()
+        path = getattr(self.driver, '_pick_return_path', None)
+        if path is not None and path.poses:
+            self.return_to_pick_stop()
+        else:
+            # Legacy sessions without measured breadcrumbs retain their explicit
+            # exit route, then visit the pickup waiting pose before observation.
+            self.execute(list(self.cycles[index][1])[:-1])
+            self.return_to_pick_stop()
+        self.execute([MotionSegment(name='return_observe', type='pose_target', target_pose=target)])
 
 
 def main(argv=None):

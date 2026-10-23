@@ -6,8 +6,9 @@ drop/reset require separate explicit commands; startup never authorizes them.
 """
 import threading
 import uuid
+from dataclasses import replace
 
-from luggage_planning.policy_place import _pose, parse_place_target
+from luggage_planning.policy_place import _pose, _vector, parse_place_target
 from luggage_planning.pose import MotionSegment
 
 
@@ -34,6 +35,11 @@ def parse_profile(data):
     cycles = []
     for entry in entries:
         target = parse_place_target(entry["place_target"])
+        if "expected_demo_input_dims_m" in entry:
+            size = _vector(entry["expected_demo_input_dims_m"], 3, "policy reference dimensions")
+            if min(size) <= 0:
+                raise ValueError("policy reference dimensions must be positive")
+            target = replace(target, reference_box_size_m=size)
         route = entry["exit_tool_poses"]
         if not isinstance(route, list) or not route:
             raise ValueError("each cycle needs explicit exit_tool_poses")
