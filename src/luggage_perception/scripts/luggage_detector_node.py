@@ -506,7 +506,11 @@ class LuggageDetector(Node):
                 % (self._top_surface_mode,))
         self._use_instance_mask = bool(
             self.get_parameter("use_instance_mask").value)
-        self._component_config = ComponentConfig()
+        from luggage_perception.runtime_tuning import configured_dataclass
+        self._component_config = configured_dataclass(
+            ComponentConfig, "component", self.declare_parameter,
+            lambda name: self.get_parameter(name).value)
+        self.get_logger().info("detector effective component tuning: %s" % vars(self._component_config))
         self._dynamic_config = DynamicTopConfig()
         # Algorithm default is 8 deg. Real D555 tops are rejected by that
         # gate; the live node accepts planes within 20 deg of +Z.
@@ -957,6 +961,9 @@ class LuggageDetector(Node):
         component = isolate_depth_component(
             depth, bbox=bbox, mask=mask, config=self._component_config)
         if not component.ok:
+            self.get_logger().warning("depth component rejected: reason=%s thresholds=%s diagnostics=%s" %
+                (component.reason, vars(self._component_config), component.diagnostics),
+                throttle_duration_sec=2.0)
             return "DETECT_" + component.reason, None
         mat4, tf_err = _lookup_transform_matrix(
             self._tf_buffer, depth_msg.header.frame_id,

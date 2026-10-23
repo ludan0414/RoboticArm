@@ -92,12 +92,16 @@ class HardwareVacuumBackend(VacuumBackend):
     def follow_step(self, panel_xyz, panel_quat):
         del panel_xyz, panel_quat
         di0 = self._io.di0()
+        if di0 is None:
+            return False, "VACUUM_IO_STALE: holding state unknown"
         if di0 is not None:
             self._attached = bool(di0)
         return True, ""
 
     def attach(self, context):
         del context
+        if self._io.di0() is None:
+            return False, "VACUUM_IO_STALE: no fresh DI0 before attach"
         ok, message = self._set_grasp()
         if not ok:
             self.last_error = message
@@ -105,6 +109,9 @@ class HardwareVacuumBackend(VacuumBackend):
             return False, "VACUUM_BACKEND_ERROR: %s" % message
         t0 = self._io.now()
         while (self._io.now() - t0) < self.seal_timeout_sec:
+            if self._io.di0() is None:
+                self.last_error = "VACUUM_IO_STALE"
+                return False, "VACUUM_IO_STALE during seal; inspect pump state"
             if self._io.di0() == 1:
                 self._attached = True
                 elapsed = self._io.now() - t0
@@ -118,7 +125,8 @@ class HardwareVacuumBackend(VacuumBackend):
     def detach(self, context):
         del context
         ok, message = self._release()
-        self._attached = False
+        if ok:
+            self._attached = False
         if not ok:
             self.last_error = message
             return False, "VACUUM_BACKEND_ERROR: %s" % message
@@ -139,12 +147,19 @@ class HardwareVacuumBackend(VacuumBackend):
         if not ok:
             return False, message
         t0 = self._io.now()
+        confirmed = False
         while (self._io.now() - t0) < self.release_timeout_sec:
             if self._io.di0() == 0:
+                confirmed = True
                 break
             self._io.sleep(min(self.seal_poll_sec, 0.05))
         self._io.sleep(self.blowoff_hold_sec)
-        return self._io.set_do(1, 0)
+        ok, message = self._io.set_do(1, 0)
+        if not ok:
+            return False, message
+        if not confirmed:
+            return False, "VACUUM_RELEASE_UNCONFIRMED: DI0 not low/fresh"
+        return True, "released; DI0 low confirmed"
 
 
 class StubVacuumBackend(VacuumBackend):

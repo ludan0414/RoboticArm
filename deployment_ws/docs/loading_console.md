@@ -81,7 +81,7 @@ bash scripts/run_loading_console.sh \
 本次必须更新旧路线：将新模板覆盖到实际使用的 profile 路径，重启 L2。
 只 `git pull` 不会更新仓库外已经复制的 `/ABS/site/loading_cycle.json`。
 确认 JSON 有 `carry_entry.strategy=outside_retract_high_lift_v1`、名义 feeder `[-1.6,0]`、
-`cycles` 只有一项。此前十箱 profile 不会自动换成新路线。
+`cycles` 当前为四项。此前十箱 profile 不会自动换成新路线。
 同时重启 O1、L1 加载新 YAML；只更新 L2 不能修正旧机器人 TF。
 需要重新从同一 demo 导出默认配置时，在仓库根目录用 Newton Python 执行：
 
@@ -115,7 +115,7 @@ python policy/export_hardware_loading_profile.py \
 ## 故障
 
 检测、吸附、携箱、释放、碰撞场景更新、退舱、归位任一失败均锁定 FAULT。
-不自动下一箱、重试或在携箱故障时松吸；没有网页故障重置。
+不自动下一箱、重试或在携箱故障时松吸。网页提供显式空载复位，见 [Pick 恢复说明](pick_recovery.md)。
 释放未确认不接着退舱；空工具/真空关闭未确认不初始化或开始下一次 Pick。
 动作超时请求取消，但取消请求不证明硬件已停。
 

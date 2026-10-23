@@ -1,0 +1,25 @@
+# Current component/support defaults. Physical suction acceptance is unchanged.
+luggage_detector:
+  ros__parameters:
+    support_mode: auto
+    platform_z: ""
+    component.erode_bbox_px: 5
+    component.erode_mask_px: 3
+    component.min_coverage_frac: 0.35
+    component.median_band_mm: 30.0
+    component.adjacent_jump_mm: 20.0
+vacuum_controller:
+  ros__parameters:
+    seal_timeout_sec: 8.0
+    seal_poll_sec: 0.1
+    release_timeout_sec: 1.0
+    blowoff_hold_sec: 0.1
+    di0_max_age_sec: 2.0
+    io_service_timeout_sec: 2.0
+    io_call_timeout_sec: 2.0
+    io_connect_attempts: 2
+    io_retry_period_sec: 0.2
+hardware_pick_driver:
+  ros__parameters:
+    vacuum_timeout: 45.0
+    vacuum_state_max_age_sec: 2.0

@@ -18,6 +18,9 @@ class Ports:
         if self.fail == name:
             raise RuntimeError(name + " failed")
 
+    def reset_observe(self):
+        self.effect("reset")
+
     def prepare(self):
         self.effect("prepare")
 
@@ -43,6 +46,34 @@ def submit(cycle, command):
 
 
 class LoadingCycleTest(unittest.TestCase):
+    def test_reset_after_pick_failure_preserves_index(self):
+        ports = Ports("pick_place")
+        cycle = LoadingCycle(ports, 2)
+        submit(cycle, "initialize")
+        submit(cycle, "pick")
+        ports.fail = ""
+        self.assertTrue(submit(cycle, "reset"))
+        self.assertEqual(cycle.index, 0)
+        self.assertEqual(cycle.state, "WAIT_PICKUP_READY")
+        self.assertEqual(ports.calls[-1], ("reset", None))
+
+    def test_reset_after_return_failure_accounts_placed_box_once(self):
+        ports = Ports("return")
+        cycle = LoadingCycle(ports, 1)
+        submit(cycle, "initialize")
+        submit(cycle, "pick")
+        self.assertTrue(cycle.return_pending)
+        ports.fail = "reset"
+        submit(cycle, "reset")
+        self.assertEqual(cycle.index, 0)
+        self.assertTrue(cycle.return_pending)
+        ports.fail = ""
+        self.assertTrue(submit(cycle, "reset"))
+        self.assertEqual(cycle.index, 1)
+        self.assertEqual(cycle.state, "COMPLETE")
+        self.assertEqual(ports.calls.count(("pick_place", 0)), 1)
+        self.assertFalse(submit(cycle, "reset"))
+
     def test_optional_axis_test_restores_wait_state_and_never_picks(self):
         ports = Ports()
         cycle = LoadingCycle(ports, 1)

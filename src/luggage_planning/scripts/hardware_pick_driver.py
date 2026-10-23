@@ -94,6 +94,7 @@ class RosPickSessionPorts:
         self._node = node
         self._driver = driver
         self._di0_raw = None
+        self._di0_received_at = None
         self._current_box = None
         trace_mode = "x" if getattr(driver, "exclusive_trace", False) else "w"
         self._trace_file = open(log_path, trace_mode) if log_path else None
@@ -108,6 +109,7 @@ class RosPickSessionPorts:
 
     def _on_di0(self, msg):
         self._di0_raw = 1 if msg.data else 0
+        self._di0_received_at = time.monotonic()
 
     def _on_current_box(self, msg):
         try:
@@ -159,16 +161,22 @@ class RosPickSessionPorts:
     def vacuum_enable(self, candidate_id):
         self._node.get_logger().info(
             "vacuum attach: candidate=%s" % candidate_id)
-        ok, message = self._driver.vacuum(True, timeout=20.0)
+        ok, message = self._driver.vacuum(True)
         return ok, message
 
     def vacuum_release(self, candidate_id=""):
         return self._driver.vacuum(False)
 
     def di0(self):
+        maximum = getattr(self._driver._args, "vacuum_state_max_age_sec", 2.0)
         if self._di0_raw is not None:
-            return self._di0_raw
+            return self._di0_raw if (self._di0_received_at is not None
+                and time.monotonic()-self._di0_received_at <= maximum) else None
         state = self._driver._vacuum_state
+        received = self._driver._vacuum_received_at
+        if (received is None or time.monotonic()-received > maximum
+                or state.get("fail_reason", "").startswith("VACUUM_IO_STALE")):
+            return None
         if state.get("attached"):
             return 1
         if "attached" in state:
@@ -192,6 +200,9 @@ class RosPickSessionPorts:
         return self._current_box
 
     def graph_health(self):
+        reason = self._driver._vacuum_state.get("fail_reason", "")
+        if reason.startswith("VACUUM_IO_STALE"):
+            return False, reason
         checks = (
             (self._driver._plan.server_is_ready(),
              "PlanMotion action missing"),
@@ -206,9 +217,10 @@ class RosPickSessionPorts:
         return True, "ok"
 
     def log_event(self, record):
+        record = {"time": time.time(), "monotonic_sec": time.monotonic(), **record}
         line = json.dumps(record, default=str)
+        self._node.get_logger().info("pick_event: %s" % line)
         if self._trace_file is None:
-            self._node.get_logger().info("retry: %s" % line)
             return
         self._trace_file.write(line + "\n")
         self._trace_file.flush()
@@ -226,6 +238,9 @@ class HardwarePickDriver(Node):
     def __init__(self, args):
         super().__init__("hardware_pick_driver")
         self._args = args
+        self.get_logger().info("pick runtime: config=%s vacuum_timeout=%.1fs state_max_age=%.1fs" %
+            (getattr(args, "runtime_config", "CLI"), args.vacuum_timeout,
+             args.vacuum_state_max_age_sec))
         self._group = ReentrantCallbackGroup()
         self._vacuum_state = {}
         self._vacuum_received_at = None
@@ -307,10 +322,14 @@ class HardwarePickDriver(Node):
         ok = status == GoalStatus.STATUS_SUCCEEDED and bool(result.success)
         return ok, str(result.message), result
 
-    def vacuum(self, enable, timeout=20.0):
+    def vacuum(self, enable, timeout=None):
+        timeout = self._args.vacuum_timeout if timeout is None else timeout
+        started = time.monotonic()
         req = VacuumCommand.Request()
         req.enable = bool(enable)
         response = self._call_srv(self._vacuum, req, timeout)
+        self.get_logger().info("vacuum RPC enable=%s elapsed=%.3fs response=%s" %
+            (enable, time.monotonic()-started, "timeout" if response is None else response.message))
         if response is None:
             return False, "vacuum timeout"
         return bool(response.success), str(response.message)
@@ -334,7 +353,11 @@ class HardwarePickDriver(Node):
 
     def detect_until_authorized(self):
         def _once():
+            started = time.monotonic()
             detect = self.detect_once()
+            self.get_logger().info("detect attempt elapsed=%.3fs success=%s message=%s" %
+                (time.monotonic()-started, bool(detect and detect.success),
+                 "DETECT_TIMEOUT" if detect is None else detect.message))
             if detect is None:
                 return False, None, "DETECT_TIMEOUT"
             if not detect.success or not detect.luggage:
@@ -703,7 +726,7 @@ class HardwarePickDriver(Node):
             self._release_on_exit = False
 
 
-def build_argument_parser():
+def build_argument_parser(runtime_config=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--observe-pose", default="current",
@@ -748,6 +771,8 @@ def build_argument_parser():
     parser.add_argument("--required-cartesian-fraction", type=float,
                         default=1.0)
     parser.add_argument("--request-deadline-sec", type=float, default=180.0)
+    parser.add_argument("--vacuum-timeout", type=float, default=45.0)
+    parser.add_argument("--vacuum-state-max-age-sec", type=float, default=2.0)
     parser.add_argument(
         "--contact-model", default="",
         help="Suction contact model YAML (default: luggage_description "
@@ -756,6 +781,10 @@ def build_argument_parser():
         "--trace-out", default="",
         help="Write the session JSONL trace to this path (evidence).")
     parser.set_defaults(use_vacuum=True)
+    from luggage_description._share import description_config_path
+    from luggage_planning.pick_runtime_config import driver_defaults
+    runtime_config = runtime_config or description_config_path("pick_runtime.site.yaml")
+    parser.set_defaults(**driver_defaults(runtime_config), runtime_config=runtime_config)
     return parser
 
 

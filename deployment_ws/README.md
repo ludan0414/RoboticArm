@@ -1,3 +1,5 @@
+本轮 Pick 参数、真空连接诊断及空载复位见 [Pick 恢复说明](docs/pick_recovery.md)。
+
 # 实机代码 — Real-robot runtime (`deployment_ws`)
 
 当前 Orin（Humble 感知）＋笔记本（Jazzy 规划/执行）的逐窗口启动、人工上箱确认、

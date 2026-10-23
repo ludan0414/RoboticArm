@@ -103,19 +103,31 @@ class ExecutorVacuumIo(object):
 
     def __init__(self, node, group, do0_service, do1_service, di0_topic):
         self._node = node
-        self._di0 = 0
+        from luggage_planning.vacuum_io_health import FreshDigitalInput, VacuumIoTransport
+        self._input = FreshDigitalInput(time.monotonic, float(node.get_parameter("di0_max_age_sec").value))
         self._do0 = node.create_client(
             SetBool, do0_service, callback_group=group)
         self._do1 = node.create_client(
             SetBool, do1_service, callback_group=group)
+        def request(value):
+            req = SetBool.Request()
+            req.data = value
+            return req
+        self._transport = VacuumIoTransport(
+            {0: self._do0, 1: self._do1}, request, time.monotonic, time.sleep,
+            lambda record: node.get_logger().info("vacuum_io: " + json.dumps(record)),
+            service_timeout=node.get_parameter("io_service_timeout_sec").value,
+            call_timeout=node.get_parameter("io_call_timeout_sec").value,
+            connect_attempts=node.get_parameter("io_connect_attempts").value,
+            retry_period=node.get_parameter("io_retry_period_sec").value)
         node.create_subscription(
             Bool, di0_topic, self._on_di0, 10, callback_group=group)
 
     def _on_di0(self, msg):
-        self._di0 = 1 if msg.data else 0
+        self._input.update(msg.data)
 
     def di0(self):
-        return int(self._di0)
+        return self._input.value()
 
     def now(self):
         return time.monotonic()
@@ -124,20 +136,7 @@ class ExecutorVacuumIo(object):
         time.sleep(max(0.0, float(dt)))
 
     def set_do(self, bit, value):
-        client = self._do0 if int(bit) == 0 else self._do1
-        if not client.wait_for_service(timeout_sec=2.0):
-            return False, "vacuum DO service unavailable"
-        request = SetBool.Request()
-        request.data = bool(int(value))
-        event = threading.Event()
-        future = client.call_async(request)
-        future.add_done_callback(lambda _f: event.set())
-        if not event.wait(2.0):
-            return False, "vacuum DO call timeout"
-        response = future.result()
-        if response is None or not response.success:
-            return False, (response.message if response else "no response")
-        return True, ""
+        return self._transport.set_do(bit, value)
 
 
 class VacuumControllerNode(Node):
@@ -157,6 +156,12 @@ class VacuumControllerNode(Node):
         self.declare_parameter("seal_poll_sec", 0.1)
         self.declare_parameter("release_timeout_sec", 1.0)
         self.declare_parameter("blowoff_hold_sec", 0.1)
+        self.declare_parameter("di0_max_age_sec", 2.0)
+        self.declare_parameter("io_service_timeout_sec", 2.0)
+        self.declare_parameter("io_call_timeout_sec", 2.0)
+        self.declare_parameter("io_connect_attempts", 2)
+        self.declare_parameter("io_retry_period_sec", 0.2)
+        self._command_lock = threading.Lock()
         # Gate parameters (defaults mirror the ROS 1 simulator).
         self.declare_parameter("pressure_kpa", 70.0)
         self.declare_parameter("effective_area_m2", 0.012)
@@ -341,10 +346,24 @@ class VacuumControllerNode(Node):
     # ------------------------------------------------------------------
 
     def _handle_command(self, request, response):
+        if not self._command_lock.acquire(blocking=False):
+            response.success, response.message = False, "VACUUM_BUSY: command in progress"
+            return response
+        start = time.monotonic()
+        try:
+            self.get_logger().info("vacuum command start: enable=%s" % bool(request.enable))
+            return self._perform_command(request, response)
+        finally:
+            self.get_logger().info("vacuum command end: enable=%s ok=%s elapsed=%.3fs message=%s" %
+                (bool(request.enable), response.success, time.monotonic()-start, response.message))
+            self._command_lock.release()
+
+    def _perform_command(self, request, response):
         enable = bool(request.enable)
         if not enable:
             ok, message = self._backend.detach({})
-            self._vacuum_on = False
+            # A failed write/release must not advertise a confirmed pump-off.
+            self._vacuum_on = not ok
             self._last_fail_reason = "" if ok else message
             self._publish_state()
             self._publish_event("detach", ok, message)
@@ -354,7 +373,9 @@ class VacuumControllerNode(Node):
 
         if isinstance(self._backend, HardwareVacuumBackend):
             ok, message = self._backend.attach({})
-            self._vacuum_on = ok
+            # A failed seal/RPC can leave the physical pump enabled. Keep a
+            # conservative on/unknown state until an explicit release succeeds.
+            self._vacuum_on = True
             self._last_fail_reason = "" if ok else message
             self._publish_state()
             self._publish_event("attach", ok, message)
@@ -437,12 +458,18 @@ class VacuumControllerNode(Node):
 
     def _follow_tick(self):
         if isinstance(self._backend, HardwareVacuumBackend):
+            previous_reason = self._last_fail_reason
             ok, message = self._backend.follow_step(
                 (0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 1.0))
             if not ok:
                 self._last_fail_reason = message
             elif self._vacuum_on and not self._backend.is_attached():
                 self._last_fail_reason = "VACUUM_SEAL_LOST"
+            elif self._last_fail_reason.startswith("VACUUM_IO_STALE"):
+                self._last_fail_reason = ""
+            if previous_reason != self._last_fail_reason:
+                self.get_logger().warning("vacuum health changed: %s -> %s" %
+                                          (previous_reason, self._last_fail_reason or "ok"))
             self._publish_state()
             return
         if not self._backend.is_attached():

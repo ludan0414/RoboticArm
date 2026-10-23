@@ -195,6 +195,8 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument("scene_tf_config", default_value=default_scene),
+            DeclareLaunchArgument("pick_runtime_config", default_value=os.path.join(
+                desc_share, "config", "pick_runtime.site.yaml")),
             DeclareLaunchArgument(
                 "robot_poses_config",
                 default_value=poses,
@@ -415,8 +417,6 @@ def generate_launch_description():
                     "cloud_max_age_sec": 30.0,
                     "estimate_retry_count": 6,
                     "estimate_retry_period_sec": 2.0,
-                    "support_mode": "auto",
-                    "platform_z": "",
                     "suitcase_update_timeout_sec": 0.0,
                     "crop_to_workspace": False,
                     # DYNAMIC-SUCTION ST-1: hardware top surface comes from
@@ -425,7 +425,7 @@ def generate_launch_description():
                     # everywhere else. scene_tf remains TF/collision/safety
                     # authority only.
                     "top_surface_mode": "dynamic",
-                }],
+                }, LaunchConfiguration("pick_runtime_config")],
                 condition=start_perception,
             ),
             Node(
@@ -487,7 +487,7 @@ def generate_launch_description():
                     "backend": "hardware",
                     "seal_timeout_sec": 8.0,
                     "follow_rate_hz": 10.0,
-                }],
+                }, LaunchConfiguration("pick_runtime_config")],
                 condition=start_planning,
             ),
             OpaqueFunction(function=_move_group),

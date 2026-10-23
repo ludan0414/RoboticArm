@@ -1,8 +1,8 @@
 """Site commissioning cycle, independent of ROS and HTTP.
 
 This is not the production cargo-map orchestrator. Each operator confirmation
-also confirms the reviewed scene and previous placement. No automatic retry,
-fault reset, target reuse, or motion on construction is allowed.
+also confirms the reviewed scene and previous placement. Recovery is an explicit
+empty-tool reset; no automatic retry or motion on construction is allowed.
 """
 import threading
 import uuid
@@ -62,12 +62,14 @@ class LoadingCycle:
         self.request_id = uuid.uuid4().hex
         self.worker = None
         self.axis_test_completed = False
+        self.return_pending = False
 
     def snapshot(self):
         with self.lock:
             return dict(state=self.state, stage=self.stage, error=self.error,
                         next_box=self.index + 1 if self.index < self.count else None,
                         completed=self.index, total=self.count,
+                        return_pending=self.return_pending,
                         axis_test_motion_completed=self.axis_test_completed,
                         request_id=self.request_id, schema_version=1)
 
@@ -78,9 +80,10 @@ class LoadingCycle:
 
     def submit(self, command, request_id, schema_version, scene_confirmed):
         with self.lock:
-            expected = (("initialize", "skip_initialize", "axis_test") if self.state == "WAIT_START"
-                        else ("pick", "axis_test"))
-            if (self.state not in ("WAIT_START", "WAIT_PICKUP_READY")
+            expected = (("reset",) if self.state == "FAULT" else
+                        ("initialize", "skip_initialize", "axis_test", "reset") if self.state == "WAIT_START"
+                        else ("pick", "axis_test", "reset"))
+            if (self.state not in ("WAIT_START", "WAIT_PICKUP_READY", "FAULT")
                     or command not in expected or request_id != self.request_id
                     or type(schema_version) is not int or schema_version != 1
                     or scene_confirmed is not True):
@@ -92,7 +95,7 @@ class LoadingCycle:
             previous_state = self.state
             self.state = "BUSY"
             self.stage = {"initialize": "INITIALIZING", "skip_initialize": "CHECK_CURRENT",
-                          "pick": "OBSERVE", "axis_test": "AXIS_TEST"}[command]
+                          "pick": "OBSERVE", "axis_test": "AXIS_TEST", "reset": "RESETTING"}[command]
             self.request_id = ""
             self.worker = threading.Thread(target=self._run, args=(command, previous_state), daemon=True)
             self.worker.start()
@@ -106,15 +109,20 @@ class LoadingCycle:
                 self.ports.prepare_current()
             elif command == "axis_test":
                 self.ports.axis_test()
+            elif command == "reset":
+                self.ports.reset_observe()
             else:
                 self.ports.pick_place(self.index)
+                self.return_pending = True
                 self.stage_changed("EXIT_AND_RETURN")
                 self.ports.return_observe(self.index)
             with self.lock:
                 self.ports.record(dict(event="completed", command=command,
                                        index=self.index))
-                if command == "pick":
+                self.error = ""
+                if command == "pick" or (command == "reset" and self.return_pending):
                     self.index += 1
+                    self.return_pending = False
                 if command == "axis_test":
                     self.axis_test_completed = True
                     self.state = previous_state
@@ -127,7 +135,7 @@ class LoadingCycle:
         except Exception as exc:
             with self.lock:
                 self.state, self.stage, self.error = "FAULT", "FAULT", str(exc)
-                self.request_id = ""
+                self.request_id = uuid.uuid4().hex
                 try:
                     self.ports.record(dict(event="fault", index=self.index, error=str(exc)))
                 except Exception:

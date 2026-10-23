@@ -48,10 +48,52 @@ class AdapterTests(unittest.TestCase):
         self.module = load_console()
         self.driver = SimpleNamespace(di0=0, healthy=True, motion_ok=True,
             _vacuum_received_at=time.monotonic(),
+            _args=SimpleNamespace(vacuum_state_max_age_sec=2.0),
             validate_scene_frame=lambda: None,
             _vacuum_state={"vacuum_on": False}, moves=[], closes=0,
             report_stage=lambda _stage: None)
         self.ports = self.module.HardwarePorts(self.driver, None, [], None, "test")
+
+    def test_reset_refuses_held_unknown_and_stale_without_motion_or_release(self):
+        self.driver.wait_graph = lambda: (True, "ok")
+        self.ports.record = lambda event: None
+        released = []
+        self.driver.vacuum = lambda enable: released.append(enable)
+        for di0, state, age in [(1, {"attached": True}, 0),
+                                (None, {}, 0), (0, {"attached": False}, 10)]:
+            self.driver.di0 = di0
+            self.driver._vacuum_state = state
+            self.driver._vacuum_received_at = time.monotonic() - age
+            with self.assertRaisesRegex(RuntimeError, "RESET_REFUSED"):
+                self.ports.reset_observe()
+        self.assertEqual(released, [])
+        self.assertEqual(self.driver.moves, [])
+
+    def test_empty_reset_switches_pump_off_before_return(self):
+        self.driver.wait_graph = lambda: (True, "ok")
+        self.driver._vacuum_state = {"attached": False, "vacuum_on": True}
+        self.driver._args.release_deadline_sec = .01
+        self.ports.record = lambda event: None
+        self.ports.observe = SimpleNamespace(position=SimpleNamespace(x=0, y=1.2, z=.86))
+        actions = []
+        def release(enable):
+            actions.append(("vacuum", enable))
+            self.driver._vacuum_state["vacuum_on"] = False
+            return True, "ok"
+        self.driver.vacuum = release
+        self.ports.prepare = lambda: actions.append(("return", None))
+        self.ports.reset_observe()
+        self.assertEqual(actions, [("vacuum", False), ("return", None)])
+
+    def test_empty_reset_returns_to_observe(self):
+        self.driver.wait_graph = lambda: (True, "ok")
+        self.driver._vacuum_state = {"attached": False, "vacuum_on": False}
+        self.ports.record = lambda event: None
+        self.ports.observe = SimpleNamespace(position=SimpleNamespace(x=0, y=1.2, z=.86))
+        prepared = []
+        self.ports.prepare = lambda: prepared.append(True)
+        self.ports.reset_observe()
+        self.assertEqual(prepared, [True])
 
     def test_return_executes_all_segments_and_closes_subscription_ports(self):
         self.ports.execute([MotionSegment(name="exit"), MotionSegment(name="observe")])

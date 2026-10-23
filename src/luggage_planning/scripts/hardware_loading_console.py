@@ -34,15 +34,17 @@ PAGE = """<!doctype html><meta charset="utf-8"><title>Hardware loading</title>
 <p>测试顺序：+X、-X、+Y、-Y、+Z、-Z，每次都复位。请现场确认：+X 向左，+Y 向后，+Z 向上。完成动作不代表已自动验证物理方向。</p>
 <p><button id="start" disabled>初始化归位（可选）</button> <button id="skip" disabled>跳过初始化，从当前位置开始</button></p>
 <p><button id="pick" disabled>开始 Pick</button></p>
+<p><button id="reset" disabled>空载复位到观察位（保留箱序）</button></p>
+<p>复位前确认机械臂已停止、工具空载。本箱如已实际放入但系统尚未记为完成，先人工处理该箱；复位不会猜测放置成功或清除舱内占位。</p>
 <h2 id="next-box"></h2><pre id="status"></pre><p id="error"></p>
 <p>故障后锁定，不自动松吸或重试。此网页不提供急停，请使用现场实体急停。</p>
 <script>
 let current=null, pending=false;
-const ack=document.getElementById('ack'), a=document.getElementById('start'), s=document.getElementById('skip'), b=document.getElementById('pick'), t=document.getElementById('axes');
-function enable(){a.disabled=s.disabled=pending||!ack.checked||current?.state!=='WAIT_START';b.disabled=pending||!ack.checked||current?.state!=='WAIT_PICKUP_READY';t.disabled=pending||!ack.checked||!['WAIT_START','WAIT_PICKUP_READY'].includes(current?.state);}
-async function refresh(){try{current=await(await fetch('/status')).json();document.getElementById('next-box').textContent=current.next_box_prompt;document.getElementById('status').textContent=JSON.stringify(current,null,2);enable();}catch(e){a.disabled=s.disabled=b.disabled=t.disabled=true;}}
+const ack=document.getElementById('ack'), a=document.getElementById('start'), s=document.getElementById('skip'), b=document.getElementById('pick'), t=document.getElementById('axes'), r=document.getElementById('reset');
+function enable(){a.disabled=s.disabled=pending||!ack.checked||current?.state!=='WAIT_START';b.disabled=pending||!ack.checked||current?.state!=='WAIT_PICKUP_READY';t.disabled=pending||!ack.checked||!['WAIT_START','WAIT_PICKUP_READY'].includes(current?.state);r.disabled=pending||!ack.checked||!['WAIT_START','WAIT_PICKUP_READY','FAULT'].includes(current?.state);}
+async function refresh(){try{current=await(await fetch('/status')).json();document.getElementById('next-box').textContent=current.next_box_prompt;document.getElementById('status').textContent=JSON.stringify(current,null,2);enable();}catch(e){a.disabled=s.disabled=b.disabled=t.disabled=r.disabled=true;}}
 async function send(command){pending=true;enable();try{const r=await fetch('/command',{method:'POST',headers:{'Content-Type':'application/json','X-Console-Token':'TOKEN'},body:JSON.stringify({command,request_id:current.request_id,schema_version:1,scene_confirmed:ack.checked})});if(!r.ok)throw Error(await r.text());ack.checked=false;document.getElementById('error').textContent='';}catch(e){document.getElementById('error').textContent=e.message;}finally{pending=false;await refresh();}}
-a.onclick=()=>send('initialize');s.onclick=()=>send('skip_initialize');b.onclick=()=>send('pick');t.onclick=()=>send('axis_test');ack.onchange=enable;setInterval(refresh,700);refresh();
+a.onclick=()=>send('initialize');s.onclick=()=>send('skip_initialize');b.onclick=()=>send('pick');t.onclick=()=>send('axis_test');r.onclick=()=>send('reset');ack.onchange=enable;setInterval(refresh,700);refresh();
 </script>"""
 
 
@@ -128,7 +130,9 @@ class HardwarePorts:
         self.journal, self.session = journal, session
 
     def record(self, event):
-        self.journal.write(json.dumps(dict(time=time.time(), **event)) + "\n")
+        record = {"time": time.time(), "session": self.session, **event}
+        self.driver.get_logger().info("loading_event: " + json.dumps(record, default=str))
+        self.journal.write(json.dumps(record) + "\n")
         self.journal.flush()
         os.fsync(self.journal.fileno())
 
@@ -166,10 +170,38 @@ class HardwarePorts:
 
     def require_empty_tool(self, ports):
         received = self.driver._vacuum_received_at
-        if (received is None or time.monotonic() - received > 2.0
+        if (received is None or time.monotonic() - received > getattr(self.driver._args, "vacuum_state_max_age_sec", 2.0)
                 or ports.di0() != 0
                 or self.driver._vacuum_state.get("vacuum_on", True)):
             raise RuntimeError("fresh empty tool / vacuum off not confirmed")
+
+    def reset_observe(self):
+        """Explicit empty-tool recovery; never release a held/unknown box."""
+        ready, reason = self.driver.wait_graph()
+        if not ready:
+            raise RuntimeError("RESET_GRAPH: " + reason)
+        ports = RosPickSessionPorts(self.driver, self.driver)
+        try:
+            received = self.driver._vacuum_received_at
+            state = dict(self.driver._vacuum_state)
+            maximum = getattr(self.driver._args, "vacuum_state_max_age_sec", 2.0)
+            self.record(dict(event="reset_preflight", vacuum=state,
+                vacuum_age_sec=None if received is None else time.monotonic()-received,
+                di0=ports.di0()))
+            if (received is None or time.monotonic()-received > maximum
+                    or ports.di0() != 0 or state.get("attached", True)):
+                raise RuntimeError("RESET_REFUSED: empty tool not confirmed; suction preserved")
+            if state.get("vacuum_on", True):
+                ok, message = self.driver.vacuum(False)
+                if not ok:
+                    raise RuntimeError("RESET_PUMP: " + message)
+                deadline = time.monotonic() + self.driver._args.release_deadline_sec
+                while self.driver._vacuum_state.get("vacuum_on", True) and time.monotonic() < deadline:
+                    time.sleep(.05)
+        finally:
+            ports.close()
+        self.prepare()
+        self.record(dict(event="reset_complete", target=vars(self.observe.position)))
 
     def prepare(self):
         self.prepare_current()
@@ -212,6 +244,7 @@ def main(argv=None):
     parser.add_argument("--site-profile", required=True)
     parser.add_argument("--journal", required=True, help="new JSONL file; existing files refused")
     parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--runtime-config", default="", help="site pick runtime YAML")
     cli = parser.parse_args(argv)
     # The console runs on the Linux Jazzy laptop. Hold this lock until exit;
     # a second console must never submit independent hardware goals.
@@ -226,7 +259,7 @@ def main(argv=None):
     carry_config = CarryConfig(entry_settings) if entry_settings is not None else None
     # Fixed execution contract: commissioning cannot disable scene/vacuum or
     # accidentally invoke a preview/pick-only path through forwarded CLI flags.
-    args = build_argument_parser().parse_args([])
+    args = build_argument_parser(cli.runtime_config or None).parse_args([])
     args.skip_observe = True  # We return to the explicit TCP pose via MoveIt.
     args.place_target_data = None
     token, session = secrets.token_hex(32), secrets.token_hex(8)

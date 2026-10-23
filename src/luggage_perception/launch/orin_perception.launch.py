@@ -166,6 +166,8 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument("scene_tf_config", default_value=default_scene),
+            DeclareLaunchArgument("pick_runtime_config", default_value=os.path.join(
+                desc_share, "config", "pick_runtime.site.yaml")),
             DeclareLaunchArgument(
                 "preprocessor_config",
                 default_value=orin_pp,
@@ -277,12 +279,10 @@ def generate_launch_description():
                     "cloud_max_age_sec": 8.0,
                     "estimate_retry_count": 4,
                     "estimate_retry_period_sec": 0.25,
-                    "support_mode": "auto",
-                    "platform_z": "",
                     "suitcase_update_timeout_sec": 0.0,
                     "crop_to_workspace": False,
                     "top_surface_mode": "dynamic",
-                }],
+                }, LaunchConfiguration("pick_runtime_config")],
                 condition=start_perception,
             ),
         ]
