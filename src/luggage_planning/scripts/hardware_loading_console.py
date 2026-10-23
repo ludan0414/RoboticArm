@@ -21,8 +21,9 @@ from hardware_pick_driver import (
 from luggage_planning.hardware_loading_cycle import LoadingCycle, parse_profile, loading_box_prompt
 from luggage_planning.pose import MotionSegment
 from luggage_planning.release_confirmation import wait_for_release
-from luggage_planning.return_pose import (adjusted_return_pose, DEFAULT_OFFSET_BASE_M,
-                                         DEFAULT_CAMERA_FRAME)
+from luggage_planning.return_pose import (adjusted_return_pose,
+                                         DEFAULT_CAMERA_FRAME, DEFAULT_TARGET_BASE_M)
+from luggage_planning.motion_batches import batch_cartesian_segments
 from luggage_planning.placement_approach import lower_final_approach
 from luggage_planning.placement_payload import release_above_support
 from luggage_planning.pick_return_path import PickReturnPath
@@ -154,7 +155,7 @@ function render(){
   const now=hw.monotonic_sec||0;
   txt('next-box',current.next_box_prompt);
   const target=current.reset_target||{}, p=target.position||{};
-  txt('reset-target',target.frame_id?'回位目标：'+target.frame_id+'，XYZ (m) = '+[p.x,p.y,p.z].map(v=>Number(v).toFixed(3)).join(', '):'回位目标待 TF 解析；相对原观察位的底座偏移 (m)：'+(current.reset_offset_base_m||[]).join(', '));
+  txt('reset-target',target.frame_id?'回位目标：'+target.frame_id+'，XYZ (m) = '+[p.x,p.y,p.z].map(v=>Number(v).toFixed(3)).join(', '):'回位目标待 TF 解析；底座 XYZ (m)：'+(current.reset_target_base_m||[]).join(', '));
   const recovery=hw.recovery||{};
   txt('recover-result',recovery.stage?('最近恢复：'+recovery.stage+' · '+(recovery.message||'')):'');
   txt('cycle-state',current.state);
@@ -230,7 +231,7 @@ class CommissioningDriver(HardwarePickDriver):
         if not hasattr(self, '_pick_return_path'):
             self._pick_return_path = PickReturnPath()
         pose = self.lookup_pose('world', 'suction_contact_frame', fresh=True)
-        self._pick_return_path.record(segment.name, pose)
+        self._pick_return_path.record(segment.name, pose, segment.waypoints)
     def attach_scene_box(self):
         """Freeze actual sealed-contact TF before the successful pick retreat."""
         from luggage_planning.policy_place import measured_grasp_transform
@@ -331,21 +332,28 @@ class CommissioningDriver(HardwarePickDriver):
             if detection is None or candidate is None:
                 raise RuntimeError("measured successful grasp required for high carry entry")
             self._carry_entry = CarryEntry(config, detection, candidate, measured_grasp=grasp)
-            return self._carry_entry.connect(actual, segments)
-        return connect_place_from_pose(actual, segments)
+            segments = self._carry_entry.connect(actual, segments)
+        else:
+            segments = connect_place_from_pose(actual, segments)
+        # Descent/release/retreat retain separate action and IO boundaries.
+        return batch_cartesian_segments(segments[:-2], 8) + list(segments[-2:])
 
     def guard_segment(self, segment):
         self.validate_scene_frame()
         actual = self.lookup_pose("world", "suction_contact_frame", fresh=True)
-        ok, message = self.motion_guard.check_segment(actual, segment.target_pose, segment.name)
-        if not ok:
-            return ok, message
-        if "_WARNING:" in message:
-            self.get_logger().warning("ADVISORY ONLY: " + message)
         entry = getattr(self, "_carry_entry", None)
-        if entry is not None:
-            return entry.check_segment(actual, segment)
-        return ok, message
+        for target in [*segment.waypoints, segment.target_pose]:
+            ok, message = self.motion_guard.check_segment(actual, target, segment.name)
+            if not ok:
+                return ok, message
+            if "_WARNING:" in message:
+                self.get_logger().warning("ADVISORY ONLY: " + message)
+            if entry is not None:
+                ok, message = entry.check_segment(actual, replace(segment, target_pose=target, waypoints=[]))
+                if not ok:
+                    return ok, message
+            actual = target
+        return True, 'all route intervals checked'
 
     def remove_scene_box(self):
         geometry = self._scene_box
@@ -375,8 +383,8 @@ class HardwarePorts:
         settings = return_settings or {}
         from luggage_planning.policy_place import _vector
         self.nominal_observe = observe
-        self.return_offset = _vector(settings.get("offset_base_m", DEFAULT_OFFSET_BASE_M), 3,
-                                     "return offset_base_m")
+        self.return_base_target = _vector(settings.get('target_base_m', DEFAULT_TARGET_BASE_M), 3,
+                                          'return target_base_m')
         self.return_camera_frame = settings.get("camera_optical_frame", DEFAULT_CAMERA_FRAME)
         if not isinstance(self.return_camera_frame, str) or not self.return_camera_frame:
             raise ValueError("return camera_optical_frame must be a nonempty frame name")
@@ -385,9 +393,10 @@ class HardwarePorts:
     def resolve_return_pose(self):
         base = self.driver.lookup_pose("world", "elfin_base_link")
         camera = self.driver.lookup_pose("suction_contact_frame", self.return_camera_frame)
-        self.observe = adjusted_return_pose(self.nominal_observe, base, camera, self.return_offset)
+        self.observe = adjusted_return_pose(self.nominal_observe, base, camera,
+                                            target_base=self.return_base_target)
         self.return_resolved = True
-        self.record(dict(event="return_target_resolved", offset_base_m=self.return_offset,
+        self.record(dict(event="return_target_resolved", target_base_m=self.return_base_target,
             base_pose=dict(position=vars(base.position), orientation=vars(base.orientation)),
             camera_pose=dict(position=vars(camera.position), orientation=vars(camera.orientation)),
             target=dict(position=vars(self.observe.position), orientation=vars(self.observe.orientation))))
@@ -500,7 +509,7 @@ class HardwarePorts:
                     tuple(vars(actual.position).values()),
                     tuple(vars(segment.target_pose.position).values())) <= .003
                     and quaternion_angle(actual.orientation, segment.target_pose.orientation) <= math.radians(1))
-                if not at_target:
+                if segment.waypoints or not at_target:
                     self.execute([segment])
                 path.settled()
         else:
@@ -544,16 +553,9 @@ class HardwarePorts:
             raise RuntimeError("placed collision permissions: " + message)
 
     def return_observe(self, index):
-        target = self.resolve_return_pose()
-        path = getattr(self.driver, '_pick_return_path', None)
-        if path is not None and path.poses:
-            self.return_to_pick_stop()
-        else:
-            # Legacy sessions without measured breadcrumbs retain their explicit
-            # exit route, then visit the pickup waiting pose before observation.
-            self.execute(list(self.cycles[index][1])[:-1])
-            self.return_to_pick_stop()
-        self.execute([MotionSegment(name='return_observe', type='pose_target', target_pose=target)])
+        # Automatic return and the explicit drop/reset use the same route and
+        # the same absolute base-frame destination.
+        self.prepare()
 
 
 def main(argv=None):
@@ -645,7 +647,7 @@ def main(argv=None):
                 snapshot["reset_target"] = (dict(frame_id="world",
                     position=vars(ports.observe.position), orientation=vars(ports.observe.orientation))
                     if ports.return_resolved else None)
-                snapshot["reset_offset_base_m"] = list(ports.return_offset)
+                snapshot["reset_target_base_m"] = list(ports.return_base_target)
                 profile = json.loads(raw_profile)
                 self.reply(200, json.dumps(merge_console_status(
                     snapshot,

@@ -68,13 +68,14 @@ class AdapterTests(unittest.TestCase):
         self.assertAlmostEqual(box.position.z,.3)
         self.assertEqual(seen,[("world","suction_contact_frame",True)])
 
-    def test_repeated_return_resolves_from_nominal_and_keeps_exit_route(self):
+    def test_auto_return_uses_reset_path_and_fixed_destination(self):
         self.ports.nominal_observe = Pose(Point(0,1.6,.86),Quaternion())
         root2 = 2**-.5
         base = Pose(Point(0,0,.86),Quaternion(0,0,-root2,root2))
         camera = Pose(Point(),Quaternion(0,root2,0,root2))
         self.driver.lookup_pose = lambda target,source: base if source=="elfin_base_link" else camera
         self.ports.record = lambda event: None
+        self.ports.prepare_current = lambda: None
         exit_segment=MotionSegment(name="exit")
         self.ports.cycles=[(None,[exit_segment,MotionSegment(name="return_observe")])]
         captured=[]
@@ -82,9 +83,9 @@ class AdapterTests(unittest.TestCase):
         self.ports.return_observe(0)
         self.ports.return_observe(0)
         self.assertEqual([s[0].name for s in captured],
-                         ['exit','return_pick_wait','return_observe']*2)
-        for segments in (captured[2], captured[5]):
-            self.assertAlmostEqual(segments[0].target_pose.position.y,.8)
+                         ['return_pick_wait','initialize_observe']*2)
+        for segments in (captured[1], captured[3]):
+            self.assertAlmostEqual(segments[0].target_pose.position.y,1.1)
             self.assertAlmostEqual(segments[0].target_pose.position.z,.66)
 
     def test_configured_height_replaces_visual_height_and_preserves_contact_top(self):
@@ -137,6 +138,39 @@ class AdapterTests(unittest.TestCase):
         driver.record_completed_motion(MotionSegment(name='place_descend'))
         self.assertEqual(calls,[dict(fresh=True)])
         self.assertEqual(driver._pick_return_path.poses,[actual])
+
+    def test_carry_batches_keep_descend_and_retreat_as_separate_actions(self):
+        from luggage_planning.policy_place import PlaceTarget, measured_grasp_transform
+        driver=self.module.CommissioningDriver()
+        box=Pose(Point(0,1.6,.1),Quaternion())
+        tool=Pose(Point(0,1.6,.2),Quaternion(1,0,0,0))
+        driver._measured_grasp=measured_grasp_transform(box,tool)
+        target=PlaceTarget(Pose(Point(-1,.5,.63),Quaternion()),.15,
+            via=tuple(Pose(Point(-i*.025,1,.8),Quaternion()) for i in range(40)),
+            reference_box_size_m=(.55,.35,.2))
+        driver._args=SimpleNamespace(place_target_data=target)
+        driver.lookup_pose=lambda *args,**kwargs: tool
+        driver.get_logger=lambda: SimpleNamespace(info=lambda message: None)
+        segments=driver.prepare_place_segments([],SimpleNamespace(frame='world',yaw_valid=True,
+            box_size=(.55,.35,.2)),SimpleNamespace(frame='world'))
+        self.assertEqual(len(segments[:-2]),8)
+        self.assertEqual([s.name for s in segments[-2:]],['place_descend','place_retreat'])
+        self.assertEqual(segments[-2].waypoints,[])
+        self.assertGreater(sum(len(s.waypoints) for s in segments[:-2]),30)
+
+    def test_guard_checks_vias_before_endpoint_and_stops_on_blocked_via(self):
+        driver=self.module.CommissioningDriver()
+        driver.validate_scene_frame=lambda: None
+        driver.lookup_pose=lambda *args,**kwargs: Pose()
+        seen=[]
+        def check(actual,target,name):
+            seen.append((actual.position.x,target.position.x))
+            return target.position.x!=2,'obstacle'
+        driver.motion_guard=SimpleNamespace(check_segment=check)
+        segment=MotionSegment(name='place_via_20',type='cartesian',
+            target_pose=Pose(Point(3,0,0)),waypoints=[Pose(Point(1,0,0)),Pose(Point(2,0,0))])
+        self.assertFalse(driver.guard_segment(segment)[0])
+        self.assertEqual(seen,[(0,1),(1,2)])
 
     def test_prepare_reverses_successful_carry_to_pick_stop_before_observe(self):
         from luggage_planning.pick_return_path import PickReturnPath

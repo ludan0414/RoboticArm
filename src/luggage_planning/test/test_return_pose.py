@@ -7,6 +7,15 @@ from luggage_planning.suction_candidate_waypoints import quat_mul, quat_conjugat
 
 
 class ReturnPoseTest(unittest.TestCase):
+    def test_absolute_base_target_is_independent_of_legacy_observe_pose(self):
+        base=Pose(Point(0,0,.86),Quaternion(0,0,-2**-.5,2**-.5))
+        camera=Pose(Point(),Quaternion(0,2**-.5,0,2**-.5))
+        results=[adjusted_return_pose(Pose(Point(0,y,.86)),base,camera,
+                    target_base=(-.8,0,-.2)) for y in (1.2,1.6)]
+        self.assertEqual(results[0],results[1])
+        self.assertAlmostEqual(results[0].position.y,.8)
+        self.assertAlmostEqual(results[0].position.z,.66)
+
     def test_offset_is_in_actual_base_axes_and_camera_views_base_minus_x(self):
         nominal = Pose(Point(.2, 1.6, .86), Quaternion())
         camera = Pose(Point(), Quaternion(0, math.sqrt(.5), 0, math.sqrt(.5)))
