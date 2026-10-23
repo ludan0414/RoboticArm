@@ -94,8 +94,7 @@ def export_profile(bundle):
     return dict(profile="site_commissioning_v1", frame_id="world",
                 tool_frame="suction_contact_frame",
                 payload_geometry_source="configured_cycle",
-                return_pose_adjustment=dict(target_base_m=[-1.1, 0., -.2],
-                    camera_optical_frame="d555_color_optical_frame"),
+                return_home=dict(type="commissioning_home", source="controller_photo"),
                 assumptions=dict(
                     calibration_source="user_provided_scene_tf_yaml",
                     source_bundle="policy/demo_data/" + bundle.name,

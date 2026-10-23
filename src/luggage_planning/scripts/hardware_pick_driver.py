@@ -153,10 +153,14 @@ class RosPickSessionPorts:
         ok, message, result = self._driver._send_action(
             self._driver._plan, goal, self._driver._args.plan_timeout,
             "PlanMotion:%s" % segment.name)
-        self.log_event(dict(stage="motion_result", name=segment.name, ok=ok,
+        event = dict(stage="motion_result", name=segment.name, ok=ok,
             message=message, fraction=float(getattr(result, "fraction", -1.0)),
             target=vars(segment.target_pose.position), orientation=vars(segment.target_pose.orientation),
-            settle_json=str(getattr(result, "settle_json", "") or "")))
+            settle_json=str(getattr(result, "settle_json", "") or ""))
+        if segment.type == 'commissioning_home':
+            from luggage_planning.commissioning_home import HOME_JOINTS_DEG
+            event.update(target=None, orientation=None, target_joints_deg=HOME_JOINTS_DEG)
+        self.log_event(event)
         observer = getattr(self._driver, "record_completed_motion", None)
         if ok and observer is not None:
             observer(segment)

@@ -2,14 +2,6 @@
   "profile": "site_commissioning_v1",
   "frame_id": "world",
   "tool_frame": "suction_contact_frame",
-  "return_pose_adjustment": {
-    "camera_optical_frame": "d555_color_optical_frame",
-    "target_base_m": [
-      -1.1,
-      0.0,
-      -0.2
-    ]
-  },
   "assumptions": {
     "calibration_source": "user_provided_scene_tf_yaml",
     "source_bundle": "policy/demo_data/site_four_colors_right160_observe120",
@@ -5536,5 +5528,9 @@
       ]
     }
   ],
-  "payload_geometry_source": "configured_cycle"
+  "payload_geometry_source": "configured_cycle",
+  "return_home": {
+    "type": "commissioning_home",
+    "source": "controller_photo"
+  }
 }

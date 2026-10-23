@@ -69,11 +69,8 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(seen,[("world","suction_contact_frame",True)])
 
     def test_auto_return_uses_reset_path_and_fixed_destination(self):
-        self.ports.nominal_observe = Pose(Point(0,1.6,.86),Quaternion())
-        root2 = 2**-.5
-        base = Pose(Point(0,0,.86),Quaternion(0,0,-root2,root2))
-        camera = Pose(Point(),Quaternion(0,root2,0,root2))
-        self.driver.lookup_pose = lambda target,source: base if source=="elfin_base_link" else camera
+        from luggage_planning.commissioning_home import HOME_SEGMENT_TYPE
+        self.driver.lookup_pose = lambda *args,**kwargs: self.fail('home must not resolve TCP/TF')
         self.ports.record = lambda event: None
         self.ports.prepare_current = lambda: None
         exit_segment=MotionSegment(name="exit")
@@ -83,10 +80,8 @@ class AdapterTests(unittest.TestCase):
         self.ports.return_observe(0)
         self.ports.return_observe(0)
         self.assertEqual([s[0].name for s in captured],
-                         ['return_pick_wait','initialize_observe']*2)
-        for segments in (captured[1], captured[3]):
-            self.assertAlmostEqual(segments[0].target_pose.position.y,1.1)
-            self.assertAlmostEqual(segments[0].target_pose.position.z,.66)
+                         ['initialize_observe']*2)
+        self.assertTrue(all(s[0].type==HOME_SEGMENT_TYPE for s in captured))
 
     def test_configured_height_replaces_visual_height_and_preserves_contact_top(self):
         from dataclasses import make_dataclass
@@ -139,7 +134,7 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(calls,[dict(fresh=True)])
         self.assertEqual(driver._pick_return_path.poses,[actual])
 
-    def test_carry_batches_keep_descend_and_retreat_as_separate_actions(self):
+    def test_carry_restores_individual_stops_instead_of_eight_batches(self):
         from luggage_planning.policy_place import PlaceTarget, measured_grasp_transform
         driver=self.module.CommissioningDriver()
         box=Pose(Point(0,1.6,.1),Quaternion())
@@ -153,10 +148,10 @@ class AdapterTests(unittest.TestCase):
         driver.get_logger=lambda: SimpleNamespace(info=lambda message: None)
         segments=driver.prepare_place_segments([],SimpleNamespace(frame='world',yaw_valid=True,
             box_size=(.55,.35,.2)),SimpleNamespace(frame='world'))
-        self.assertEqual(len(segments[:-2]),8)
+        self.assertGreater(len(segments[:-2]),30)
         self.assertEqual([s.name for s in segments[-2:]],['place_descend','place_retreat'])
         self.assertEqual(segments[-2].waypoints,[])
-        self.assertGreater(sum(len(s.waypoints) for s in segments[:-2]),30)
+        self.assertTrue(all(not s.waypoints for s in segments))
 
     def test_guard_checks_vias_before_endpoint_and_stops_on_blocked_via(self):
         driver=self.module.CommissioningDriver()
@@ -172,6 +167,15 @@ class AdapterTests(unittest.TestCase):
         self.assertFalse(driver.guard_segment(segment)[0])
         self.assertEqual(seen,[(0,1),(1,2)])
 
+    def test_joint_home_keeps_scene_gate_without_testing_a_fake_tcp_target(self):
+        from luggage_planning.commissioning_home import HOME_SEGMENT_TYPE
+        driver=self.module.CommissioningDriver()
+        checked=[]
+        driver.validate_scene_frame=lambda: checked.append('scene')
+        driver.lookup_pose=lambda *args,**kwargs: self.fail('no fake TCP target')
+        self.assertTrue(driver.guard_segment(MotionSegment(type=HOME_SEGMENT_TYPE))[0])
+        self.assertEqual(checked,['scene'])
+
     def test_prepare_reverses_successful_carry_to_pick_stop_before_observe(self):
         from luggage_planning.pick_return_path import PickReturnPath
         path = self.driver._pick_return_path = PickReturnPath()
@@ -179,7 +183,7 @@ class AdapterTests(unittest.TestCase):
                        ('place_descend',4),('place_retreat',3)]:
             path.record(name,Pose(Point(x,0,1),Quaternion()))
         self.ports.prepare_current = lambda: None
-        self.ports.resolve_return_pose = lambda: None
+        self.ports.record = lambda event: None
         captured=[]
         self.ports.execute=lambda segments: captured.extend(segments)
         self.ports.prepare()
@@ -194,7 +198,7 @@ class AdapterTests(unittest.TestCase):
         path.record('pick_retreat',Pose(Point(1,0,1),Quaternion()))
         path.record('pre_place',Pose(Point(3,0,1),Quaternion()))
         self.ports.prepare_current=lambda: None
-        self.ports.resolve_return_pose=lambda: None
+        self.ports.record=lambda event: None
         names=[]
         def execute(segments):
             names.extend(s.name for s in segments)
@@ -269,6 +273,17 @@ class AdapterTests(unittest.TestCase):
             self.ports.reset_observe()
             self.assertEqual(self.actions, ["recover", "release", "detach", "return"])
             self.assertIsNone(self.driver._scene_box)
+
+    def test_drop_reset_finishes_at_same_fixed_joint_home_as_initialize(self):
+        from luggage_planning.commissioning_home import HOME_SEGMENT_TYPE
+        self.configure_reset()
+        self.ports.prepare=self.module.HardwarePorts.prepare.__get__(self.ports)
+        self.ports.prepare_current=lambda: None
+        segments=[]
+        self.ports.execute=lambda goals: segments.extend(goals)
+        self.ports.reset_observe()
+        self.assertEqual(len(segments),1)
+        self.assertEqual(segments[0].type,HOME_SEGMENT_TYPE)
 
     def test_controller_failure_preserves_suction_and_starts_no_return(self):
         self.configure_reset()

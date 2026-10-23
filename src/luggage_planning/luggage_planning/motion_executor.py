@@ -12,6 +12,7 @@ Segment routing (docs/plans/closed_loop_pick_retreat_nodes.md):
                     (MoveIt TOTG execute stays off; Huayan CollisionStop)
     cartesian    -> GetCartesianPath geometry, wrist gate, excursion diagnostics,
                     occupancy sweep, then rest-to-rest ExecuteTrajectory
+    commissioning_home -> hardcoded photographed J1..J6 via MoveGroup joint goal
     named pose   -> handled by the node via plain FJT (see motion_planner_node)
 
 ``keep_tool_down`` adds an orientation constraint (tool Z down).
@@ -394,6 +395,12 @@ class MotionExecutor:
     def _execute_segment_inner(self, segment_msg, feedback_cb,
                                execute_timeout, current_joints):
         seg_type = str(segment_msg.type)
+        if seg_type == 'commissioning_home':
+            from luggage_planning.commissioning_home import HOME_JOINTS_RAD
+            return self._run_joint_goal(
+                list(HOME_JOINTS_RAD), feedback_cb, execute_timeout,
+                'commissioning photographed home', seed_joints=current_joints,
+                segment_msg=segment_msg)
         if seg_type == "pose_target":
             return self._run_pose_target(segment_msg, feedback_cb,
                                          execute_timeout, current_joints)

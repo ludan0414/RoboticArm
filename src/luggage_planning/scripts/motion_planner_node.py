@@ -573,11 +573,17 @@ class MotionPlannerNode(Node):
             message = exec_result.message
             fraction = exec_result.fraction
             target = segment.target_pose.position
-            self._emit_boundary(name, extra={
+            boundary = {
                 "kind": "PlanMotion",
                 "segment_type": str(segment.type),
                 "target": [float(target.x), float(target.y), float(target.z)],
-            }, success=ok)
+            }
+            if segment.type == 'commissioning_home':
+                from luggage_planning.commissioning_home import HOME_JOINTS_DEG, HOME_JOINTS_RAD
+                boundary.pop('target')
+                boundary['target_joints_deg'] = list(HOME_JOINTS_DEG)
+                boundary['target_joints_rad'] = list(HOME_JOINTS_RAD)
+            self._emit_boundary(name, extra=boundary, success=ok)
         except Exception as exc:  # noqa: BLE001 - action boundary
             self.get_logger().error("segment %s raised: %s" % (name, exc))
             goal_handle.abort()
