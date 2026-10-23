@@ -2,6 +2,7 @@
 
 import threading
 import unittest
+from unittest.mock import patch
 
 from elfin_trajectory_executor.huayan_interface import (
     ConnectionState,
@@ -206,7 +207,7 @@ class HardwareSafetyTest(unittest.TestCase):
         self.assertEqual(result, RESULT_SUCCESSFUL)
         self.assertEqual(
             [call[0] for call in iface._cps.calls[:2]],
-            ["StartServo", "InitServoEsJ"])
+            ["StartServo", "PushServoJ"])
         self.assertNotIn(
             "PushServoEsJ", [call[0] for call in iface._cps.calls])
         self.assertNotIn(
@@ -232,187 +233,171 @@ class HardwareSafetyTest(unittest.TestCase):
         self.assertEqual(fsm_id, 33)
         self.assertEqual(fsm_desc, "RobotStandBy")
 
-    def test_servo_j_retries_init_after_40025_not_standby(self):
-        class _Cps:
+    def servo_controller(self, requires_init=False, clears_init_on_start=False):
+        """Model real preconditions, rather than return success on retry N."""
+        class Controller:
             def __init__(self):
+                self.fsm = 33
+                self.initialized = False
                 self.calls = []
-                self._inits = 0
+                self.fail_init = 0
+                self.pushes = 0
+                self.lose_on_push = None
 
-            def HRIF_InitServoEsJ(self, box, robot):
-                self._inits += 1
-                self.calls.append("InitServoEsJ")
-                return 40025 if self._inits == 1 else 0
-
-            def HRIF_StartServo(self, box, robot, servo_time, lookahead):
+            def HRIF_StartServo(self, *args):
                 self.calls.append("StartServo")
+                self.fsm = 34  # Synthetic active state, not a firmware enum.
+                if clears_init_on_start:
+                    self.initialized = False
                 return 0
 
-            def HRIF_PushServoJ(self, box, robot, joints):
-                self.calls.append("PushServoJ")
-                return 0
-
-        iface = _polling_interface(_Cps())
-        iface._monitor_only = False
-        iface._ensure_connected = lambda: True
-        iface._refresh_positions = lambda: None
-        iface._current_positions_deg = [0.0] * 6
-        iface._max_vel = 0.0
-        iface._controller_limit_fraction = 0.8
-        iface._read_fsm = lambda: (33, "RobotStandBy")
-
-        result = iface.execute_servo_j_path(
-            [[0.0] * 6],
-            feedback_fn=lambda _positions: None,
-            cancel_flag=threading.Event(),
-            servo_time=0.001,
-            lookahead_time=0.01,
-        )
-
-        self.assertEqual(result, RESULT_SUCCESSFUL)
-        self.assertEqual(iface._cps.calls[:4], [
-            "StartServo", "InitServoEsJ", "InitServoEsJ", "PushServoJ",
-        ])
-        self.assertEqual(iface.stop_calls, 0)
-        self.assertTrue(any("40025" in item for item in iface._node.logger.warnings))
-
-    def test_servo_j_reopens_session_when_first_push_is_uninitialized(self):
-        class _Cps:
-            def __init__(self):
-                self.calls = []
-                self._pushes = 0
-
-            def HRIF_InitServoEsJ(self, box, robot):
+            def HRIF_InitServoEsJ(self, *args):
                 self.calls.append("InitServoEsJ")
+                if self.fsm != 33:
+                    return 40025
+                if self.fail_init:
+                    return self.fail_init
+                self.initialized = True
                 return 0
 
-            def HRIF_StartServo(self, box, robot, servo_time, lookahead):
-                self.calls.append("StartServo")
-                return 0
-
-            def HRIF_PushServoJ(self, box, robot, joints):
-                self._pushes += 1
+            def HRIF_PushServoJ(self, *args):
                 self.calls.append("PushServoJ")
-                if self._pushes == 1:
+                self.pushes += 1
+                if self.lose_on_push == self.pushes:
                     return 40071
+                return 40071 if requires_init and not self.initialized else 0
+
+            def HRIF_GrpStop(self, *args):
+                self.calls.append("GrpStop")
+                self.fsm = 33
                 return 0
 
-        iface = _polling_interface(_Cps())
-        iface._monitor_only = False
-        iface._ensure_connected = lambda: True
-        iface._refresh_positions = lambda: None
-        iface._current_positions_deg = [0.0] * 6
-        iface._max_vel = 0.0
-        iface._controller_limit_fraction = 0.8
-        iface._read_fsm = lambda: (33, "RobotStandBy")
-
-        result = iface.execute_servo_j_path(
-            [[0.0] * 6],
-            feedback_fn=lambda _positions: None,
-            cancel_flag=threading.Event(),
-            servo_time=0.001,
-            lookahead_time=0.01,
-        )
-
-        self.assertEqual(result, RESULT_SUCCESSFUL)
-        self.assertEqual(iface._cps.calls[:4], [
-            "StartServo", "InitServoEsJ", "PushServoJ", "InitServoEsJ",
-        ])
-        self.assertGreaterEqual(iface._cps.calls.count("PushServoJ"), 2)
-        self.assertEqual(iface._cps.calls.count("StartServo"), 1)
-        self.assertIn("40071", iface._node.logger.warnings[0])
-
-    def test_servo_j_inits_only_when_already_in_servo(self):
-        class _Cps:
-            def __init__(self):
-                self.calls = []
-
-            def HRIF_InitServoEsJ(self, box, robot):
-                self.calls.append("InitServoEsJ")
-                return 0
-
-            def HRIF_StartServo(self, box, robot, servo_time, lookahead):
-                self.calls.append("StartServo")
-                return 0
-
-            def HRIF_PushServoJ(self, box, robot, joints):
-                self.calls.append("PushServoJ")
-                return 0
-
-        iface = _polling_interface(_Cps())
-        iface._monitor_only = False
-        iface._ensure_connected = lambda: True
-        iface._refresh_positions = lambda: None
-        iface._current_positions_deg = [0.0] * 6
-        iface._max_vel = 0.0
-        iface._controller_limit_fraction = 0.8
-        iface._read_fsm = lambda: (34, "RobotServo")
-
-        result = iface.execute_servo_j_path(
-            [[0.0] * 6],
-            feedback_fn=lambda _positions: None,
-            cancel_flag=threading.Event(),
-            servo_time=0.001,
-            lookahead_time=0.01,
-        )
-
-        self.assertEqual(result, RESULT_SUCCESSFUL)
-        self.assertEqual(iface._cps.calls[0], "InitServoEsJ")
-        self.assertNotIn("StartServo", iface._cps.calls)
-        self.assertGreaterEqual(iface._cps.calls.count("PushServoJ"), 1)
-        self.assertEqual(iface.stop_calls, 0)
-
-    def test_servo_j_40071_reopens_from_standby_when_init_does_not_clear(self):
-        class _Cps:
-            def __init__(self):
-                self.calls = []
-                self.started = False
-                self._pushes = 0
-
-            def HRIF_InitServoEsJ(self, box, robot):
-                self.calls.append("InitServoEsJ")
-                return 0
-
-            def HRIF_StartServo(self, box, robot, servo_time, lookahead):
-                self.started = True
-                self.calls.append("StartServo")
-                return 0
-
-            def HRIF_PushServoJ(self, box, robot, joints):
-                self._pushes += 1
-                self.calls.append("PushServoJ")
-                return 0 if self._pushes >= 3 else 40071
-
-        cps = _Cps()
+        cps = Controller()
         iface = _polling_interface(cps)
         iface._monitor_only = False
         iface._ensure_connected = lambda: True
-        iface._refresh_positions = lambda: None
-        iface._current_positions_deg = [0.0] * 6
         iface._max_vel = 0.0
-        iface._controller_limit_fraction = 0.8
+        iface._read_fsm = lambda: (cps.fsm, "synthetic")
+        def stop(**kwargs):
+            iface._servo_j_timing = None
+            iface.stop_calls += 1
+            cps.HRIF_GrpStop()
+        iface._safe_stop = stop
+        return iface, cps
 
-        def _read():
-            if iface.stop_calls:
-                return (33, "RobotStandBy")
-            if cps.started:
-                return (34, "RobotServo")
-            return (33, "RobotStandBy")
+    def run_servo(self, iface):
+        return iface.execute_servo_j_path(
+            [[0.0] * 6], lambda positions: None, threading.Event(),
+            servo_time=.001, lookahead_time=.001)
 
-        iface._read_fsm = _read
+    def test_standard_suite_never_initializes_esj_and_reuses_owned_session(self):
+        iface, cps = self.servo_controller()
+        self.assertEqual(self.run_servo(iface), RESULT_SUCCESSFUL)
+        self.assertEqual(self.run_servo(iface), RESULT_SUCCESSFUL)
+        self.assertEqual(cps.calls.count("StartServo"), 1)
+        self.assertNotIn("InitServoEsJ", cps.calls)
+        self.assertNotIn("GrpStop", cps.calls)
 
+    def test_first_40071_stops_and_initializes_only_in_standby(self):
+        iface, cps = self.servo_controller(requires_init=True)
+        self.assertEqual(self.run_servo(iface), RESULT_SUCCESSFUL)
+        self.assertEqual(cps.calls[:6], ["StartServo", "PushServoJ",
+            "GrpStop", "InitServoEsJ", "StartServo", "PushServoJ"])
+        self.assertEqual(cps.calls.count("InitServoEsJ"), 1)
+
+    def test_firmware_clearing_init_on_start_fails_without_retry_loop(self):
+        iface, cps = self.servo_controller(True, True)
+        self.assertEqual(self.run_servo(iface), RESULT_ERROR)
+        self.assertEqual(cps.calls.count("InitServoEsJ"), 1)
+        self.assertEqual(cps.calls.count("StartServo"), 2)
+        self.assertEqual(cps.calls.count("PushServoJ"), 2)
+
+    def test_init_40025_is_not_retried_or_followed_by_start(self):
+        iface, cps = self.servo_controller(requires_init=True)
+        cps.fail_init = 40025
+        self.assertEqual(self.run_servo(iface), RESULT_ERROR)
+        self.assertEqual(cps.calls.count("InitServoEsJ"), 1)
+        self.assertEqual(cps.calls[-1], "InitServoEsJ")
+        self.assertIsNone(iface._servo_j_timing)
+
+    def test_unknown_fsm_never_starts_or_initializes(self):
+        iface, cps = self.servo_controller()
+        cps.fsm = None
+        self.assertEqual(self.run_servo(iface), RESULT_ERROR)
+        self.assertEqual(cps.calls, [])
+
+    def test_unowned_active_controller_is_stopped_before_start(self):
+        iface, cps = self.servo_controller()
+        cps.fsm = 34
+        self.assertEqual(self.run_servo(iface), RESULT_SUCCESSFUL)
+        self.assertEqual(cps.calls[:2], ["GrpStop", "StartServo"])
+        self.assertNotIn("InitServoEsJ", cps.calls)
+
+    def test_midstream_40071_fails_without_restarting_trajectory(self):
+        iface, cps = self.servo_controller()
+        cps.lose_on_push = 2
+        self.assertEqual(self.run_servo(iface), RESULT_ERROR)
+        self.assertEqual(cps.calls.count("StartServo"), 1)
+        self.assertNotIn("InitServoEsJ", cps.calls)
+        self.assertIsNone(iface._servo_j_timing)
+
+    def test_fault_during_recovery_never_initializes_or_restarts(self):
+        iface, cps = self.servo_controller(True)
+        def fault_stop(*args):
+            cps.calls.append("GrpStop")
+            cps.fsm = 21
+            return 0
+        cps.HRIF_GrpStop = fault_stop
+        self.assertEqual(self.run_servo(iface), RESULT_ERROR)
+        self.assertNotIn("InitServoEsJ", cps.calls)
+        self.assertEqual(cps.calls.count("StartServo"), 1)
+
+    def test_timing_change_stops_owned_session_before_restarting(self):
+        iface, cps = self.servo_controller()
+        self.assertEqual(self.run_servo(iface), RESULT_SUCCESSFUL)
+        self.assertTrue(iface._open_servo_j(.002, .001))
+        self.assertEqual(cps.calls[-2:], ["GrpStop", "StartServo"])
+
+    def test_controller_standby_requires_start_despite_cached_session(self):
+        iface, cps = self.servo_controller()
+        self.assertEqual(self.run_servo(iface), RESULT_SUCCESSFUL)
+        cps.fsm = 33
+        self.assertEqual(self.run_servo(iface), RESULT_SUCCESSFUL)
+        self.assertEqual(cps.calls.count("StartServo"), 2)
+
+    def test_cancel_during_recovery_never_initializes_or_restarts(self):
+        iface, cps = self.servo_controller(True)
+        cancel = threading.Event()
+        original_stop = cps.HRIF_GrpStop
+        def stop(*args):
+            cancel.set()
+            return original_stop(*args)
+        cps.HRIF_GrpStop = stop
         result = iface.execute_servo_j_path(
-            [[0.0] * 6],
-            feedback_fn=lambda _positions: None,
-            cancel_flag=threading.Event(),
-            servo_time=0.001,
-            lookahead_time=0.01,
-        )
+            [[0.0]*6], lambda positions: None, cancel, .001, .001)
+        self.assertEqual(result, RESULT_PREEMPTED)
+        self.assertNotIn("InitServoEsJ", cps.calls)
+        self.assertEqual(cps.calls.count("StartServo"), 1)
 
-        self.assertEqual(result, RESULT_SUCCESSFUL)
-        self.assertGreaterEqual(iface.stop_calls, 1)
-        self.assertGreaterEqual(cps.calls.count("StartServo"), 2)
-        self.assertGreaterEqual(cps.calls.count("PushServoJ"), 3)
-        self.assertTrue(any("StandBy" in item for item in iface._node.logger.warnings))
+    def test_recovery_resets_schedule_without_catchup_burst(self):
+        iface, cps = self.servo_controller(True)
+        clock = [10.0]
+        push_times = []
+        original_push = cps.HRIF_PushServoJ
+        def push(*args):
+            push_times.append(clock[0])
+            return original_push(*args)
+        cps.HRIF_PushServoJ = push
+        def sleep(seconds):
+            clock[0] += seconds
+        with patch("elfin_trajectory_executor.huayan_interface.time.monotonic",
+                   side_effect=lambda: clock[0]), patch(
+                   "elfin_trajectory_executor.huayan_interface.time.sleep",
+                   side_effect=sleep):
+            self.assertEqual(self.run_servo(iface), RESULT_SUCCESSFUL)
+        self.assertGreater(push_times[1]-push_times[0], .09)
+        for a, b in zip(push_times[1:], push_times[2:]):
+            self.assertGreaterEqual(b-a, .001-1e-9)
 
     def test_servo_j_refuses_start_when_collision_stopped(self):
         class _Cps:

@@ -22,7 +22,7 @@ Nodes that start:
 
 | Node | Role |
 |---|---|
-| `trajectory_executor` | Huayan CPS. `StartServo` then `InitServoEsJ`, then `PushServoJ` at 0.02 s. |
+| `trajectory_executor` | Huayan CPS. `StartServo` then `PushServoJ` at 0.02 s; reuse a known active session. See the bounded StandBy recovery below. |
 | `scene_hardware` | robot_state_publisher and container TF. |
 | `scene_manager` | planning scene. |
 | `waypoint_generator` | pick segment poses. |
@@ -93,7 +93,8 @@ planner and executor load it.
 
 | What happened | Cause | What the code does now |
 |---|---|---|
-| `ExecuteTrajectory -4` on the first `PushServoJ`, code 40071 | `StartServo` does not leave ServoEsJ initialized. The same 40071 came back on `approach` after `pre_grasp` and on `pick_retreat` after vacuum DO. Init-then-Start left the buffer empty; Stop on the first 40025 lost the session. | `StartServo`, then `InitServoEsJ`. A 40071 retries Init only (no Stop). If that still 40071, Stop, wait stable StandBy 33, then Start+Init and push the same point again. |
+| `ExecuteTrajectory -4` on the first `PushServoJ`, code 40071 | Controller rejected the current ServoJ session. Historical site notes report a buffer issue; exact firmware behavior still needs per-call evidence. | Stop, confirm stable StandBy 33, `InitServoEsJ`, then `StartServo`, and retry the first point once. If still rejected, fail; do not repeat the cycle. |
+| `InitServoEsJ` returns 40025 | Its StandBy precondition was not met. The former Start-then-Init recovery could recreate this on every attempt. | Normal J/P startup never calls Init. The single compatibility Init is gated on freshly verified StandBy, before Start. A rejected Init ends recovery. |
 | `-4` near the end of `pre_grasp`, FSM 21 `RobotCollisionStop` | Braking a 60 deg/s^2 ServoJ stream. `PushServoJ` has no acceleration field, so a 20 ms step that dumps speed looks like a hit. | Planner and the pushed grid both cap accel and decel at 20 deg/s^2, including the first sample. |
 | `pick_retreat` lifted too fast, then `-4` / `CARRY_FAULT` | Retreat leaves rest, so the fast part is acceleration. Only the brake had been lowered. Vacuum stayed on because retreat never finished. | The accel ramp is 20 deg/s^2 as well. Release vacuum and return the pendant to FSM 33 before retrying. |
 | Waypoint `pre_grasp` crawled, then the driver timed out | MoveJ serialized small vias and waited for blending. Effective speed was about 1 deg/s. | The live pick uses ServoJ, not that waypoint chain. |
@@ -175,3 +176,29 @@ Acceptance for the selected strategy:
 
 Outlier frames must keep replay artifacts under `docs/status/evidence/` before
 rerunning the same gate.
+
+## ServoJ session lifecycle (2026-10-23)
+
+Application `READY` does not imply controller `StandBy=33`. Track the timing
+pair of an owned ServoJ session separately. Reuse it only while the controller
+remains active and timing is unchanged. A controller StandBy observation requires
+Start again. Stop, disconnect/reconnect and waypoint execution invalidate the
+cached session. Unknown FSM blocks streaming.
+
+Normal startup follows the vendored SDK J/P suite: `StartServo → PushServoJ`.
+Only error 40071 on the first point permits one compatibility recovery:
+`GrpStop → stable StandBy → InitServoEsJ → StartServo → retry same point`.
+This recovery never issues GrpReset. Init is not attempted while servo-active,
+and 40025 is not blindly retried. Mid-stream 40071 stops and fails rather than
+restarting a moving path. Recovery resets the point-send deadline so the stream
+cannot burst to catch up after the stop/wait. Cancellation blocks restarting.
+Start/Init/Stop events include fresh before/after FSM values for diagnosis.
+
+Firmware that clears the initialized buffer on Start may still return 40071;
+that case remains a reported failure requiring firmware-specific investigation.
+Offline stateful-controller tests cover both firmware models, faults, unknown
+FSM, cancellation, and segment reuse. They do not certify real-arm execution.
+
+After updating, stop the old executor and build `elfin_trajectory_executor` from
+`deployment_ws/` in the existing Jazzy environment, then source its overlay and
+restart the original L1 launch. No live robot verification was run for this fix.

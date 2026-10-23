@@ -119,11 +119,6 @@ FSM_ERROR = 22
 FSM_ENABLING = 23
 FSM_DISABLE = 24
 FSM_STANDBY = 33
-# This S20's PushServoJ returns 40071 until InitServoEsJ has cleared the
-# EsJ buffer. StartServo leaves StandBy, so Init after Start can 40025.
-# Retry Init without Stop; Stop only after those retries lose.
-SERVO_ESJ_INIT_RETRIES = 2
-SERVO_ESJ_INIT_RETRY_S = 0.02
 SERVO_STANDBY_STABLE_S = 0.1
 
 
@@ -192,8 +187,7 @@ def hrif_init_servo_esj(
     box_id: int = BOX_ID,
     rbt_id: int = RBT_ID,
 ):
-    """Clear the servo point buffer. This CPS rejects PushServoJ with 40071
-    until InitServoEsJ has run. PushServoEsJ itself stays unused."""
+    """Compatibility buffer initialization; call only in verified StandBy."""
     return cps.HRIF_InitServoEsJ(box_id, rbt_id)
 
 
@@ -564,6 +558,7 @@ class HuayanInterface:
         It does not electrify, reset, or enable the servo — use that for
         bag recording. Full connect() is required before FollowJointTrajectory.
         """
+        self._servo_j_timing = None
         self._monitor_only = monitor_only
         self._set_state(ConnectionState.CONNECTING)
         if self._cps is None:
@@ -587,6 +582,7 @@ class HuayanInterface:
 
     def disconnect(self) -> None:
         """Drop the TCP session. Default leaves 48 V on (no BlackOut)."""
+        self._servo_j_timing = None
         if self._cps is None:
             return
         try:
@@ -806,15 +802,12 @@ class HuayanInterface:
         servo_time: float = 0.02,
         lookahead_time: float = 0.1,
     ) -> int:
-        """Execute absolute joint-degree targets with Start/Init/PushServoJ.
+        """Stream ServoJ using a session independent of application READY.
 
-        Official J/P suite is StartServo then PushServoJ. This CPS still
-        returns 40071 until InitServoEsJ has cleared the EsJ buffer, so
-        the site order is StartServo, then InitServoEsJ. Init after Start
-        can 40025; retry Init without Stop. A finished segment, or a DO
-        command between segments, drops the buffer: first Push of the
-        next goal is 40071. Init-only first; reopen from StandBy after
-        that. PushServoEsJ stays unused (20006/20007 on this S20).
+        Normal startup uses the SDK J/P suite: StartServo then PushServoJ.
+        Only a first-point 40071 enables one compatibility recovery: stop,
+        verify StandBy, InitServoEsJ, StartServo, retry the same point once.
+        A mid-stream session loss fails instead of resuming a moving path.
         """
         if self._monitor_only:
             self._node.get_logger().error(
@@ -864,12 +857,14 @@ class HuayanInterface:
             return RESULT_ERROR
         fsm_id, fsm_desc = self._read_fsm()
         if fsm_id == FSM_COLLISION_STOP:
+            self._servo_j_timing = None
             self._node.get_logger().error(
                 "[huayan] refusing StartServo: FSM 21 RobotCollisionStop. "
                 "Clear the collision on the pendant (GrpReset) to StandBy 33."
             )
             return RESULT_ERROR
-        if fsm_id is not None and fsm_id < FSM_STANDBY:
+        if fsm_id is None or fsm_id < FSM_STANDBY:
+            self._servo_j_timing = None
             self._node.get_logger().error(
                 "[huayan] refusing StartServo: FSM %s (%s); need StandBy 33"
                 % (fsm_id, fsm_desc)
@@ -882,11 +877,14 @@ class HuayanInterface:
                 self._node.get_logger().info('[huayan] ServoJ preempted.')
                 self._safe_stop()
                 return RESULT_PREEMPTED
-            if not self._open_servo_j(servo_time, lookahead_time):
+            if not self._open_servo_j(servo_time, lookahead_time,
+                                      cancel_flag=cancel_flag):
+                if cancel_flag.is_set():
+                    self._safe_stop()
+                    return RESULT_PREEMPTED
                 return RESULT_ERROR
 
             next_push = time.monotonic()
-            reopen_stage = 0
             for index, joints_deg in enumerate(stream):
                 if cancel_flag.is_set():
                     self._node.get_logger().info('[huayan] ServoJ preempted.')
@@ -899,31 +897,23 @@ class HuayanInterface:
                 if n_ret != 0:
                     self._note_hrif(
                         "PushServoJ", n_ret, extra={"index": index})
-                # A finished ServoJ segment, or a DO command between
-                # segments, drops the EsJ buffer. The next segment's
-                # first push then returns 40071 even after StartServo.
-                # Init-only first (loading_057 attach won that retry).
-                # Full reopen from StandBy only if Init does not take.
-                if n_ret == 40071 and reopen_stage == 0:
+                if n_ret == 40071 and index == 0 and not cancel_flag.is_set():
                     self._node.get_logger().warning(
-                        "[huayan] PushServoJ %d returned 40071; "
-                        "InitServoEsJ without restart" % index)
-                    n_init = self._init_servo_esj(
-                        retries=SERVO_ESJ_INIT_RETRIES, log_error=False)
-                    reopen_stage = 1
-                    if n_init == 0:
-                        n_ret = hrif_push_servo_j(self._cps, list(joints_deg))
-                        if n_ret != 0:
-                            self._note_hrif(
-                                "PushServoJ", n_ret, extra={"index": index})
-                if n_ret == 40071 and reopen_stage < 2:
-                    self._node.get_logger().warning(
-                        "[huayan] PushServoJ %d returned 40071; "
-                        "reopening ServoJ from StandBy" % index)
+                        "[huayan] first PushServoJ returned 40071; "
+                        "stop, verify StandBy, Init then Start once")
                     if not self._open_servo_j(
-                            servo_time, lookahead_time, from_standby=True):
+                            servo_time, lookahead_time, from_standby=True,
+                            cancel_flag=cancel_flag):
+                        if cancel_flag.is_set():
+                            self._safe_stop()
+                            return RESULT_PREEMPTED
                         return RESULT_ERROR
-                    reopen_stage = 2
+                    if cancel_flag.is_set():
+                        self._safe_stop()
+                        return RESULT_PREEMPTED
+                    # Recovery consumed wall time; never catch up by bursting
+                    # the remaining 20ms points against the old deadline.
+                    next_push = time.monotonic()
                     n_ret = hrif_push_servo_j(self._cps, list(joints_deg))
                     if n_ret != 0:
                         self._note_hrif(
@@ -946,9 +936,10 @@ class HuayanInterface:
             return RESULT_ERROR
 
         fsm_id, fsm_desc = self._read_fsm()
-        if fsm_id == FSM_COLLISION_STOP:
+        if fsm_id is None or fsm_id in (FSM_ESTOP, FSM_ERROR, FSM_COLLISION_STOP):
+            self._servo_j_timing = None
             self._node.get_logger().error(
-                "[huayan] ServoJ ended in FSM 21 RobotCollisionStop (%s)"
+                "[huayan] ServoJ ended with invalid/fault FSM (%s)"
                 % fsm_desc
             )
             self._set_state(ConnectionState.ERROR)
@@ -991,117 +982,74 @@ class HuayanInterface:
             time.sleep(0.1)
         return False, fsm_id, fsm_desc
 
-    def _init_servo_esj(self, retries=0, log_error=True):
-        """Clear the EsJ buffer. Retry 40025 without Stop."""
-        n_ret = hrif_init_servo_esj(self._cps)
+    def _stop_servo_for_reopen(self):
+        """Stop without clearing controller faults; confirm actual StandBy."""
+        self._servo_j_timing = None
+        fsm_before, _ = self._read_fsm()
+        n_ret = self._cps.HRIF_GrpStop(BOX_ID, RBT_ID)
+        self._note_hrif("GrpStop", n_ret, extra={
+            "fsm_before": fsm_before, "fsm_after": self._read_fsm()[0]})
         if n_ret != 0:
-            self._note_hrif("InitServoEsJ", n_ret)
-        attempt = 0
-        retries = max(0, int(retries))
-        while n_ret == 40025 and attempt < retries:
-            attempt += 1
-            self._node.get_logger().warning(
-                "[huayan] InitServoEsJ 40025 (not StandBy); retry %d/%d"
-                % (attempt, retries))
-            time.sleep(SERVO_ESJ_INIT_RETRY_S)
-            n_ret = hrif_init_servo_esj(self._cps)
-            self._note_hrif("InitServoEsJ", n_ret)
-        if n_ret == 0 and attempt == 0:
-            self._note_hrif("InitServoEsJ", 0)
-        if n_ret != 0 and log_error:
-            msg = self._get_error_str(n_ret)
-            self._node.get_logger().error(
-                f'[huayan] HRIF_InitServoEsJ failed (code {n_ret}): {msg}')
-        return n_ret
+            return False
+        ok, _, _ = self._wait_fsm_standby()
+        return ok
 
-    def _start_then_init_servo(self, servo_time, lookahead_time):
-        """StartServo, then InitServoEsJ.
+    def _open_servo_j(self, servo_time, lookahead_time, from_standby=False,
+                      cancel_flag=None):
+        """Own only sessions we opened; application READY is not StandBy.
 
-        Start leaves StandBy. Init after Start can 40025; retry Init
-        without Stop. Init-then-Start left the buffer empty on the
-        approach after pre_grasp (40071, then 40025 on the Stop reopen).
+        _servo_j_timing is None for an invalid/unknown session, or the timing
+        pair of an active session. Stop, disconnect and non-Servo execution
+        invalidate it. A controller StandBy observation also requires Start.
+        from_standby selects the single 40071 compatibility recovery.
         """
-        n_ret = hrif_start_servo(self._cps, servo_time, lookahead_time)
-        self._note_hrif("StartServo", n_ret)
-        if n_ret != 0:
-            msg = self._get_error_str(n_ret)
-            self._node.get_logger().error(
-                f'[huayan] HRIF_StartServo failed (code {n_ret}): {msg}')
-            return n_ret
-        return self._init_servo_esj(retries=SERVO_ESJ_INIT_RETRIES)
-
-    def _fail_servo_open(self):
-        fsm_after, _ = self._read_fsm()
-        if fsm_after != FSM_COLLISION_STOP:
-            self._safe_stop()
-        self._set_state(ConnectionState.ERROR)
-        return False
-
-    def _open_servo_j(self, servo_time, lookahead_time, from_standby=False):
-        """Open ServoJ: Start then Init. Init-only if already in servo."""
+        timing = (servo_time, lookahead_time)
         fsm_id, fsm_desc = self._read_fsm()
-        if fsm_id in (FSM_ESTOP, FSM_ERROR, FSM_COLLISION_STOP):
+        if fsm_id is None or fsm_id < FSM_STANDBY:
+            self._servo_j_timing = None
             self._node.get_logger().error(
                 "[huayan] refusing ServoJ open: FSM %s (%s)"
                 % (fsm_id, fsm_desc))
             self._set_state(ConnectionState.ERROR)
             return False
-        if fsm_id is not None and fsm_id < FSM_STANDBY:
-            self._node.get_logger().error(
-                "[huayan] refusing ServoJ open: FSM %s (%s); need StandBy 33"
-                % (fsm_id, fsm_desc))
-            self._set_state(ConnectionState.ERROR)
-            return False
-        if from_standby and fsm_id != FSM_STANDBY:
-            self._node.get_logger().info(
-                "[huayan] reopening ServoJ from StandBy (FSM=%s %s)"
-                % (fsm_id, fsm_desc))
-            self._safe_stop(resume_state=ConnectionState.EXECUTING)
-            ok, fsm_id, fsm_desc = self._wait_fsm_standby()
-            if not ok:
-                self._node.get_logger().error(
-                    "[huayan] still not StandBy for reopen (FSM=%s %s)"
-                    % (fsm_id, fsm_desc))
+        if (not from_standby and fsm_id != FSM_STANDBY
+                and getattr(self, "_servo_j_timing", None) == timing):
+            return True
+        self._servo_j_timing = None
+        if from_standby or fsm_id != FSM_STANDBY:
+            if not self._stop_servo_for_reopen():
                 self._set_state(ConnectionState.ERROR)
                 return False
-        elif fsm_id is not None and fsm_id != FSM_STANDBY:
-            self._node.get_logger().info(
-                "[huayan] ServoJ already moving (FSM=%s %s); Init only"
-                % (fsm_id, fsm_desc))
-            n_ret = self._init_servo_esj(
-                retries=SERVO_ESJ_INIT_RETRIES, log_error=False)
-            if n_ret == 0:
-                return True
-            self._node.get_logger().warning(
-                "[huayan] Init-only failed (code %s); stop and Start+Init"
-                % n_ret)
-            self._safe_stop(resume_state=ConnectionState.EXECUTING)
-            ok, fsm_id, fsm_desc = self._wait_fsm_standby()
-            if not ok:
-                self._node.get_logger().error(
-                    "[huayan] still not StandBy after Init-only (FSM=%s %s)"
-                    % (fsm_id, fsm_desc))
+        if cancel_flag is not None and cancel_flag.is_set():
+            return False
+        if from_standby:
+            # Re-read immediately before Init. Never Init after Start or
+            # blindly retry a state-precondition error such as 40025.
+            fsm_id, _ = self._read_fsm()
+            if fsm_id != FSM_STANDBY:
                 self._set_state(ConnectionState.ERROR)
                 return False
-        n_ret = self._start_then_init_servo(servo_time, lookahead_time)
-        if n_ret == 0:
-            return True
-        if n_ret != 40025:
-            return self._fail_servo_open()
-        self._node.get_logger().warning(
-            "[huayan] InitServoEsJ 40025 after Start; stop and retry")
-        self._safe_stop(resume_state=ConnectionState.EXECUTING)
-        ok, fsm_id, fsm_desc = self._wait_fsm_standby()
-        if not ok:
-            self._node.get_logger().error(
-                "[huayan] still not StandBy after 40025 (FSM=%s %s)"
-                % (fsm_id, fsm_desc))
+            n_ret = hrif_init_servo_esj(self._cps)
+            self._note_hrif("InitServoEsJ", n_ret, extra={
+                "fsm_before": fsm_id, "fsm_after": self._read_fsm()[0]})
+            if n_ret != 0:
+                self._set_state(ConnectionState.ERROR)
+                return False
+        if cancel_flag is not None and cancel_flag.is_set():
+            return False
+        fsm_id, _ = self._read_fsm()
+        if fsm_id != FSM_STANDBY:
             self._set_state(ConnectionState.ERROR)
             return False
-        n_ret = self._start_then_init_servo(servo_time, lookahead_time)
-        if n_ret == 0:
-            return True
-        return self._fail_servo_open()
+        n_ret = hrif_start_servo(self._cps, servo_time, lookahead_time)
+        self._note_hrif("StartServo", n_ret, extra={
+            "fsm_before": fsm_id, "fsm_after": self._read_fsm()[0]})
+        if n_ret != 0:
+            self._safe_stop()
+            self._set_state(ConnectionState.ERROR)
+            return False
+        self._servo_j_timing = timing
+        return True
 
     def execute(
         self,
@@ -1129,6 +1077,7 @@ class HuayanInterface:
         -------
         int  RESULT_SUCCESSFUL | RESULT_PREEMPTED | RESULT_ERROR | RESULT_INVALID_GOAL
         """
+        self._servo_j_timing = None
         if self._monitor_only:
             self._node.get_logger().error(
                 '[huayan] monitor_only is set; refusing FollowJointTrajectory'
@@ -1292,6 +1241,7 @@ class HuayanInterface:
         Electrify then refuse with 20018. Treat those as already-done,
         matching the Noetic executor. Do not GrpReset a standing arm.
         """
+        self._servo_j_timing = None
         log = self._node.get_logger()
 
         if not self._cps.HRIF_IsConnected(BOX_ID):
@@ -1720,6 +1670,7 @@ class HuayanInterface:
 
     def _safe_stop(self, resume_state=None) -> None:
         """Best-effort emergency stop."""
+        self._servo_j_timing = None
         try:
             if self._cps is not None:
                 self._cps.HRIF_GrpStop(BOX_ID, RBT_ID)
