@@ -179,6 +179,23 @@ class AdapterTests(unittest.TestCase):
         self.assertGreater(len(result), 1)
         self.assertIs(result[-1], first)
 
+    def test_status_payload_shows_hrif_not_site_profile(self):
+        snapshot = {"state": "FAULT", "stage": "APPROACH", "error": "exit 5",
+                    "completed": 0, "total": 4}
+        payload = self.module.merge_console_status(
+            snapshot, "下一箱 1/4",
+            {"attached": False, "vacuum_on": False, "age_sec": 0.2},
+            {"available": True, "fsm_id": 33, "last_hrif": {"code": 40071}},
+            {"event": "aborted", "error_string": "Hardware execution error"},
+        )
+        self.assertEqual(payload["hardware"]["last_hrif"]["code"], 40071)
+        self.assertEqual(payload["vacuum"]["age_sec"], 0.2)
+        self.assertNotIn("profile_assumptions", payload)
+        self.assertIn("robot-fsm", self.module.PAGE)
+        self.assertIn("hrif-code", self.module.PAGE)
+        self.assertIn("event-log", self.module.PAGE)
+        self.assertIn("/elfin/hardware_status", self.module.PAGE)
+
 
 if __name__ == "__main__":
     unittest.main()

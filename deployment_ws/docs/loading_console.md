@@ -104,8 +104,10 @@ python policy/export_hardware_loading_profile.py \
 2. 检查现场并勾选确认，选择“初始化归位（可选）”或“跳过初始化，从当前位置开始”；
    对应动作/检查成功后进入 WAIT_PICKUP_READY。
 3. 人工上箱、退出运动范围，检查并重新勾选，点“开始 Pick”。
-4. 执行中按钮禁用，显示 DETECT、PICK_ATTACH、PLACE_DESCEND、PLACE_RETREAT、
-   EXIT_AND_RETURN、RETURN_OBSERVE 等阶段。
+4. 执行中按钮禁用。页面顶部卡片显示任务阶段、CPS FSM（33 StandBy / 21 碰撞等）、
+   最近 HRIF 命令和错误码（40071 缓冲未初始化、40025 不在 StandBy）、真空状态，
+   以及最近 ServoJ 事件。原始 JSON 折在页面底部。这些数来自
+   `/elfin/hardware_status`，需 L1 `trajectory_executor` 已重启发布。
 5. 成功归位后产生新请求，等待下一箱。网页刷新不会重发 Pick。
 
 每次确认带 request_id 和 schema_version；忙碌、重复、过期请求不排队。

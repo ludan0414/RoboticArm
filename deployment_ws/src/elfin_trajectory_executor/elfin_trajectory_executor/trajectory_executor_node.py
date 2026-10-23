@@ -15,6 +15,7 @@ would fight /joint_states.
 
 from __future__ import annotations
 
+import json
 import math
 from typing import List, Optional
 
@@ -46,6 +47,7 @@ from .execution_contract import (
     event_to_json,
     make_event,
 )
+from .hardware_status import HARDWARE_STATUS_TOPIC
 from .goal_ownership import SingleGoalOwner
 from .huayan_interface import HuayanInterface, RESULT_ERROR
 from .servo_j import fjt_to_servo_j_deg
@@ -177,12 +179,18 @@ class TrajectoryExecutorNode(Node):
         self._js_pub = self.create_publisher(JointState, '/joint_states', 10)
         self._status_pub = self.create_publisher(String, STATUS_TOPIC, _LATCHED)
         self._events_pub = self.create_publisher(String, EVENTS_TOPIC, _LATCHED)
+        self._hw_pub = self.create_publisher(String, HARDWARE_STATUS_TOPIC, _LATCHED)
+        self._last_status = "idle"
         if mode == 'real':
             self._vacuum_pub = VacuumIoPublisher(self)
 
         # 100 Hz joint-state publisher timer.
         self._js_timer = self.create_timer(
             0.01, self._publish_joint_states,
+            callback_group=self._cb_group,
+        )
+        self._hw_timer = self.create_timer(
+            0.2, self._publish_hardware_status,
             callback_group=self._cb_group,
         )
 
@@ -410,6 +418,7 @@ class TrajectoryExecutorNode(Node):
                 )
                 self.get_logger().error('[executor] Goal aborted: hardware error.')
 
+            self._publish_hardware_status()
             return result
         finally:
             if not self._goal_owner.release(goal_id):
@@ -566,9 +575,21 @@ class TrajectoryExecutorNode(Node):
         return path
 
     def _publish_status(self, status: str) -> None:
+        self._last_status = str(status)
         msg = String()
         msg.data = status
         self._status_pub.publish(msg)
+
+    def _publish_hardware_status(self) -> None:
+        getter = getattr(self._iface, "hardware_status", None)
+        if not callable(getter):
+            return
+        payload = getter()
+        payload["executor"] = getattr(self, "_last_status", "")
+        payload["stamp_ns"] = int(self.get_clock().now().nanoseconds)
+        msg = String()
+        msg.data = json.dumps(payload, default=str)
+        self._hw_pub.publish(msg)
 
     def _publish_event(
         self,

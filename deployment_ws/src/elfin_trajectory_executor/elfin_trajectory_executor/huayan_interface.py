@@ -57,6 +57,12 @@ from .cps_parse import (
     joints_moved_deg,
     tcp_from_read_act_pos,
 )
+from .hardware_status import (
+    append_event,
+    build_snapshot,
+    make_hrif_event,
+    should_keep_event,
+)
 from .servo_j import (
     SERVO_MAX_ACCEL_DEG,
     SERVO_MAX_DECEL_DEG,
@@ -488,6 +494,64 @@ class HuayanInterface:
             self._state = state
         self._node.get_logger().info(f'[huayan] State → {state.name}')
 
+    def _ensure_hw(self) -> threading.Lock:
+        if not hasattr(self, "_hw_lock"):
+            self._hw_lock = threading.Lock()
+            self._last_hrif = None
+            self._last_fault = None
+            self._last_fsm_id = None
+            self._last_fsm_desc = None
+            if not hasattr(self, "command_log") or self.command_log is None:
+                self.command_log = []
+        return self._hw_lock
+
+    def _note_hrif(self, name, code, message="", extra=None):
+        lock = self._ensure_hw()
+        code = int(code)
+        if not message and code != 0 and hasattr(self, "_get_error_str"):
+            try:
+                message = self._get_error_str(code)
+            except Exception:
+                message = ""
+        event = make_hrif_event(
+            name, code, message,
+            monotonic_sec=time.monotonic(), extra=extra)
+        with lock:
+            self._last_hrif = event
+            if code != 0:
+                self._last_fault = event
+                self.last_error_string = (
+                    "%s failed (code %s): %s" % (name, code, message or event["hint"])
+                )
+            if should_keep_event(name, code):
+                self.command_log = append_event(self.command_log, event)
+        return event
+
+    def hardware_status(self) -> dict:
+        lock = self._ensure_hw()
+        with lock:
+            fsm_id = self._last_fsm_id
+            fsm_desc = self._last_fsm_desc or ""
+            last_hrif = self._last_hrif
+            last_fault = self._last_fault
+            events = list(self.command_log)
+        connection = ""
+        if hasattr(self, "_state"):
+            with self._state_lock:
+                connection = self._state.name
+        joints = list(getattr(self, "_current_positions_deg", []) or [])
+        return build_snapshot(
+            connection=connection,
+            fsm_id=fsm_id,
+            fsm_desc=fsm_desc,
+            last_hrif=last_hrif,
+            last_fault=last_fault,
+            events=events,
+            joints_deg=joints,
+            last_error_string=getattr(self, "last_error_string", "") or "",
+            monotonic_sec=time.monotonic(),
+        )
+
     # ------------------------------------------------------------------
     # Connection lifecycle
     # ------------------------------------------------------------------
@@ -832,6 +896,9 @@ class HuayanInterface:
                 if wait_s > 0.0:
                     time.sleep(wait_s)
                 n_ret = hrif_push_servo_j(self._cps, list(joints_deg))
+                if n_ret != 0:
+                    self._note_hrif(
+                        "PushServoJ", n_ret, extra={"index": index})
                 # A finished ServoJ segment, or a DO command between
                 # segments, drops the EsJ buffer. The next segment's
                 # first push then returns 40071 even after StartServo.
@@ -846,6 +913,9 @@ class HuayanInterface:
                     reopen_stage = 1
                     if n_init == 0:
                         n_ret = hrif_push_servo_j(self._cps, list(joints_deg))
+                        if n_ret != 0:
+                            self._note_hrif(
+                                "PushServoJ", n_ret, extra={"index": index})
                 if n_ret == 40071 and reopen_stage < 2:
                     self._node.get_logger().warning(
                         "[huayan] PushServoJ %d returned 40071; "
@@ -855,6 +925,9 @@ class HuayanInterface:
                         return RESULT_ERROR
                     reopen_stage = 2
                     n_ret = hrif_push_servo_j(self._cps, list(joints_deg))
+                    if n_ret != 0:
+                        self._note_hrif(
+                            "PushServoJ", n_ret, extra={"index": index})
                 if n_ret != 0:
                     msg = self._get_error_str(n_ret)
                     self._node.get_logger().error(
@@ -921,6 +994,8 @@ class HuayanInterface:
     def _init_servo_esj(self, retries=0, log_error=True):
         """Clear the EsJ buffer. Retry 40025 without Stop."""
         n_ret = hrif_init_servo_esj(self._cps)
+        if n_ret != 0:
+            self._note_hrif("InitServoEsJ", n_ret)
         attempt = 0
         retries = max(0, int(retries))
         while n_ret == 40025 and attempt < retries:
@@ -930,6 +1005,9 @@ class HuayanInterface:
                 % (attempt, retries))
             time.sleep(SERVO_ESJ_INIT_RETRY_S)
             n_ret = hrif_init_servo_esj(self._cps)
+            self._note_hrif("InitServoEsJ", n_ret)
+        if n_ret == 0 and attempt == 0:
+            self._note_hrif("InitServoEsJ", 0)
         if n_ret != 0 and log_error:
             msg = self._get_error_str(n_ret)
             self._node.get_logger().error(
@@ -944,6 +1022,7 @@ class HuayanInterface:
         approach after pre_grasp (40071, then 40025 on the Stop reopen).
         """
         n_ret = hrif_start_servo(self._cps, servo_time, lookahead_time)
+        self._note_hrif("StartServo", n_ret)
         if n_ret != 0:
             msg = self._get_error_str(n_ret)
             self._node.get_logger().error(
@@ -1361,6 +1440,7 @@ class HuayanInterface:
                 self._node.get_logger().info(
                     '[huayan] %s skipped: %s' % (name, self._get_error_str(n_ret)))
             return True
+        self._note_hrif(name, n_ret)
         self._node.get_logger().error(
             '[huayan] %s failed: %s' % (name, self._get_error_str(n_ret)))
         return False
@@ -1378,6 +1458,10 @@ class HuayanInterface:
         except (TypeError, ValueError):
             return None, result[0]
         desc = result[1] if len(result) > 1 else str(result[0])
+        lock = self._ensure_hw()
+        with lock:
+            self._last_fsm_id = fsm_id
+            self._last_fsm_desc = desc
         return fsm_id, desc
 
     def _controller_started(self) -> bool:
@@ -1639,10 +1723,12 @@ class HuayanInterface:
         try:
             if self._cps is not None:
                 self._cps.HRIF_GrpStop(BOX_ID, RBT_ID)
+                self._note_hrif("GrpStop", 0)
                 settle = getattr(self, "_stop_settle_s", 0.1)
                 if settle > 0.0:
                     time.sleep(settle)
                 self._cps.HRIF_GrpReset(BOX_ID, RBT_ID)
+                self._note_hrif("GrpReset", 0)
         except Exception as exc:
             self._node.get_logger().warn(f'[huayan] Stop error: {exc}')
         finally:
