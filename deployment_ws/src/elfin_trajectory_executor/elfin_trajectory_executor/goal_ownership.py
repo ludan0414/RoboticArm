@@ -47,6 +47,18 @@ class SingleGoalOwner:
             self._goal_id = normalized
             return True
 
+    def try_reserve_operation(self, name: str) -> bool:
+        """Atomically reserve a non-action operation; stale cancels cannot bind it."""
+        if not name:
+            return False
+        with self._lock:
+            if self._reserved:
+                return False
+            self._reserved = True
+            self._goal_id = name
+            self._cancel_event = None
+            return True
+
     def cancel(self, goal_id: str) -> bool:
         """Set cancellation only when ``goal_id`` owns the executor."""
         normalized = str(goal_id or '')

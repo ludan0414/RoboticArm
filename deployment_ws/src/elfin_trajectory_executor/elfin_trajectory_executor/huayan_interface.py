@@ -46,6 +46,8 @@ import math
 import threading
 import time
 from enum import Enum, auto
+from . import controller_state as controller_fsm
+from .controller_recovery import recover_standby as run_controller_recovery
 from typing import Callable, List, Optional, Tuple
 
 from .cps_parse import (
@@ -134,12 +136,14 @@ def connect2box_allow_refuse(fsm_id: Optional[int]) -> bool:
 
 
 def electrify_allow_refuse(fsm_id: Optional[int]) -> bool:
-    return fsm_id is not None and int(fsm_id) >= FSM_ENABLING
+    return fsm_id in controller_fsm.MOTION_READY or fsm_id in (
+        controller_fsm.ENABLING, controller_fsm.DISABLED,
+        controller_fsm.DISABLING, controller_fsm.STOPPING)
 
 
 def already_motion_ready(fsm_id: Optional[int]) -> bool:
-    """StandBy (33) or later: servos enabled. Skip GrpReset / GrpEnable."""
-    return fsm_id is not None and int(fsm_id) >= FSM_STANDBY
+    """Known enabled states; Moving is 25, while 34 is ScriptRunning."""
+    return fsm_id in controller_fsm.MOTION_READY
 
 
 def hrif_waypoint_joint(
@@ -521,7 +525,10 @@ class HuayanInterface:
                 self.command_log = append_event(self.command_log, event)
         return event
 
-    def hardware_status(self) -> dict:
+    def hardware_status(self, refresh_fsm=False) -> dict:
+        # Faulted application state must not freeze the displayed controller FSM.
+        # A failed fresh read is represented as unknown, not a cached StandBy.
+        fresh_state = self._read_fsm() if refresh_fsm else None
         lock = self._ensure_hw()
         with lock:
             fsm_id = self._last_fsm_id
@@ -529,12 +536,14 @@ class HuayanInterface:
             last_hrif = self._last_hrif
             last_fault = self._last_fault
             events = list(self.command_log)
+        if fresh_state is not None:
+            fsm_id, fsm_desc = fresh_state
         connection = ""
         if hasattr(self, "_state"):
             with self._state_lock:
                 connection = self._state.name
         joints = list(getattr(self, "_current_positions_deg", []) or [])
-        return build_snapshot(
+        snapshot = build_snapshot(
             connection=connection,
             fsm_id=fsm_id,
             fsm_desc=fsm_desc,
@@ -545,6 +554,8 @@ class HuayanInterface:
             last_error_string=getattr(self, "last_error_string", "") or "",
             monotonic_sec=time.monotonic(),
         )
+        snapshot["recovery"] = dict(getattr(self, "_recovery_status", {}))
+        return snapshot
 
     # ------------------------------------------------------------------
     # Connection lifecycle
@@ -863,7 +874,7 @@ class HuayanInterface:
                 "Clear the collision on the pendant (GrpReset) to StandBy 33."
             )
             return RESULT_ERROR
-        if fsm_id is None or fsm_id < FSM_STANDBY:
+        if fsm_id not in controller_fsm.SERVO_STATES:
             self._servo_j_timing = None
             self._node.get_logger().error(
                 "[huayan] refusing StartServo: FSM %s (%s); need StandBy 33"
@@ -936,7 +947,7 @@ class HuayanInterface:
             return RESULT_ERROR
 
         fsm_id, fsm_desc = self._read_fsm()
-        if fsm_id is None or fsm_id in (FSM_ESTOP, FSM_ERROR, FSM_COLLISION_STOP):
+        if fsm_id not in controller_fsm.SERVO_STATES:
             self._servo_j_timing = None
             self._node.get_logger().error(
                 "[huayan] ServoJ ended with invalid/fault FSM (%s)"
@@ -954,8 +965,8 @@ class HuayanInterface:
     def _wait_fsm_standby(self, timeout_s=3.0, stable_s=SERVO_STANDBY_STABLE_S):
         """Wait until CPS is exactly StandBy 33.
 
-        InitServoEsJ requires StandBy. FSM >= 33 (servo / moving) is
-        already_motion_ready for enable, but it is not StandBy. A single
+        InitServoEsJ requires StandBy. Moving (25) is enabled, but is not
+        StandBy. A single
         33 read right after GrpStop can be transient; require it twice.
         """
         deadline = time.monotonic() + float(timeout_s)
@@ -994,6 +1005,39 @@ class HuayanInterface:
         ok, _, _ = self._wait_fsm_standby()
         return ok
 
+    def recover_standby(self):
+        """Explicit service only; caller holds the exclusive executor owner."""
+        self._servo_j_timing = None
+        self._set_state(ConnectionState.EXECUTING)
+        self._recovery_status = dict(ok=False, stage="RECOVERING")
+        try:
+            if self._monitor_only or self._cps is None:
+                raise RuntimeError("controller connection unavailable or monitor-only")
+
+            def command(name):
+                before, _ = self._read_fsm()
+                code = getattr(self._cps, "HRIF_" + name)(BOX_ID, RBT_ID)
+                self._note_hrif(name, code, extra={
+                    "fsm_before": before, "fsm_after": self._read_fsm()[0]})
+                return code
+
+            result = run_controller_recovery(self._read_fsm, command)
+            self._recovery_status = dict(ok=result.ok, stage=result.stage,
+                fsm_id=result.fsm_id, message=result.message)
+            if not result.ok:
+                raise RuntimeError(result.message)
+            self._refresh_positions()
+            if not self._read_controller_motion_limits():
+                raise RuntimeError("controller limits unavailable after recovery")
+            self.last_error_string = ""  # Preserve _last_fault as history.
+            self._set_state(ConnectionState.READY)
+            return True, result.message
+        except Exception as exc:
+            self.last_error_string = "RECOVERY: " + str(exc)
+            self._recovery_status.update(ok=False, message=str(exc))
+            self._set_state(ConnectionState.ERROR)
+            return False, self.last_error_string
+
     def _open_servo_j(self, servo_time, lookahead_time, from_standby=False,
                       cancel_flag=None):
         """Own only sessions we opened; application READY is not StandBy.
@@ -1005,7 +1049,7 @@ class HuayanInterface:
         """
         timing = (servo_time, lookahead_time)
         fsm_id, fsm_desc = self._read_fsm()
-        if fsm_id is None or fsm_id < FSM_STANDBY:
+        if fsm_id not in controller_fsm.SERVO_STATES:
             self._servo_j_timing = None
             self._node.get_logger().error(
                 "[huayan] refusing ServoJ open: FSM %s (%s)"
@@ -1673,13 +1717,11 @@ class HuayanInterface:
         self._servo_j_timing = None
         try:
             if self._cps is not None:
-                self._cps.HRIF_GrpStop(BOX_ID, RBT_ID)
-                self._note_hrif("GrpStop", 0)
+                n_ret = self._cps.HRIF_GrpStop(BOX_ID, RBT_ID)
+                self._note_hrif("GrpStop", n_ret)
                 settle = getattr(self, "_stop_settle_s", 0.1)
                 if settle > 0.0:
                     time.sleep(settle)
-                self._cps.HRIF_GrpReset(BOX_ID, RBT_ID)
-                self._note_hrif("GrpReset", 0)
         except Exception as exc:
             self._node.get_logger().warn(f'[huayan] Stop error: {exc}')
         finally:

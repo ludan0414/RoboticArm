@@ -221,7 +221,7 @@ class HardwareSafetyTest(unittest.TestCase):
         self.assertGreaterEqual(len(push), 12)
 
     def test_wait_fsm_standby_requires_exact_standby(self):
-        reads = [(34, "RobotServo"), (34, "RobotServo"), (33, "RobotStandBy")]
+        reads = [(25, "RobotMoving"), (25, "RobotMoving"), (33, "RobotStandBy")]
         iface = _polling_interface(object())
 
         def _read():
@@ -246,7 +246,7 @@ class HardwareSafetyTest(unittest.TestCase):
 
             def HRIF_StartServo(self, *args):
                 self.calls.append("StartServo")
-                self.fsm = 34  # Synthetic active state, not a firmware enum.
+                self.fsm = 25  # CPS Moving.
                 if clears_init_on_start:
                     self.initialized = False
                 return 0
@@ -328,7 +328,7 @@ class HardwareSafetyTest(unittest.TestCase):
 
     def test_unowned_active_controller_is_stopped_before_start(self):
         iface, cps = self.servo_controller()
-        cps.fsm = 34
+        cps.fsm = 25
         self.assertEqual(self.run_servo(iface), RESULT_SUCCESSFUL)
         self.assertEqual(cps.calls[:2], ["GrpStop", "StartServo"])
         self.assertNotIn("InitServoEsJ", cps.calls)

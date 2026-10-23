@@ -1,8 +1,8 @@
 """Site commissioning cycle, independent of ROS and HTTP.
 
 This is not the production cargo-map orchestrator. Each operator confirmation
-also confirms the reviewed scene and previous placement. Recovery is an explicit
-empty-tool reset; no automatic retry or motion on construction is allowed.
+also confirms the reviewed scene and previous placement. Recovery and payload
+drop/reset require separate explicit commands; startup never authorizes them.
 """
 import threading
 import uuid
@@ -50,7 +50,8 @@ def parse_profile(data):
 class LoadingCycle:
     """Single worker; reserve one request atomically before starting effects.
 
-    ports: prepare(), prepare_current(), pick_place(index), return_observe(index), record(event).
+    ports: prepare(), prepare_current(), pick_place(index), return_observe(index),
+    recover_controller(), reset_observe(), record(event).
     Methods raise on failure. The adapter must only return after settled motion.
     A failed or interrupted session requires explicit on-site recovery.
     """
@@ -80,9 +81,9 @@ class LoadingCycle:
 
     def submit(self, command, request_id, schema_version, scene_confirmed):
         with self.lock:
-            expected = (("reset",) if self.state == "FAULT" else
-                        ("initialize", "skip_initialize", "axis_test", "reset") if self.state == "WAIT_START"
-                        else ("pick", "axis_test", "reset"))
+            expected = (("reset", "recover") if self.state == "FAULT" or self.return_pending else
+                        ("initialize", "skip_initialize", "axis_test", "reset", "recover") if self.state == "WAIT_START"
+                        else ("pick", "axis_test", "reset", "recover"))
             if (self.state not in ("WAIT_START", "WAIT_PICKUP_READY", "FAULT")
                     or command not in expected or request_id != self.request_id
                     or type(schema_version) is not int or schema_version != 1
@@ -95,7 +96,8 @@ class LoadingCycle:
             previous_state = self.state
             self.state = "BUSY"
             self.stage = {"initialize": "INITIALIZING", "skip_initialize": "CHECK_CURRENT",
-                          "pick": "OBSERVE", "axis_test": "AXIS_TEST", "reset": "RESETTING"}[command]
+                          "pick": "OBSERVE", "axis_test": "AXIS_TEST", "reset": "RESETTING",
+                          "recover": "RECOVERING_CONTROLLER"}[command]
             self.request_id = ""
             self.worker = threading.Thread(target=self._run, args=(command, previous_state), daemon=True)
             self.worker.start()
@@ -111,6 +113,8 @@ class LoadingCycle:
                 self.ports.axis_test()
             elif command == "reset":
                 self.ports.reset_observe()
+            elif command == "recover":
+                self.ports.recover_controller()
             else:
                 self.ports.pick_place(self.index)
                 self.return_pending = True
@@ -123,7 +127,12 @@ class LoadingCycle:
                 if command == "pick" or (command == "reset" and self.return_pending):
                     self.index += 1
                     self.return_pending = False
-                if command == "axis_test":
+                if command == "recover":
+                    # Stopping is not a successful return or placement. Require
+                    # a new initialization (or reset if return_pending) next.
+                    self.state = "WAIT_START"
+                    self.stage = "CONTROLLER_STANDBY"
+                elif command == "axis_test":
                     self.axis_test_completed = True
                     self.state = previous_state
                     self.stage = "AXIS_TEST_COMPLETE_CHECK_DIRECTIONS"

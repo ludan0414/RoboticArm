@@ -21,6 +21,9 @@ class Ports:
     def reset_observe(self):
         self.effect("reset")
 
+    def recover_controller(self):
+        self.effect("recover")
+
     def prepare(self):
         self.effect("prepare")
 
@@ -46,6 +49,38 @@ def submit(cycle, command):
 
 
 class LoadingCycleTest(unittest.TestCase):
+    def test_controller_recovery_clears_fault_without_release_or_count_change(self):
+        ports = Ports("pick_place")
+        cycle = LoadingCycle(ports, 2)
+        submit(cycle, "skip_initialize")
+        submit(cycle, "pick")
+        ports.fail = ""
+        self.assertTrue(submit(cycle, "recover"))
+        self.assertEqual(cycle.state, "WAIT_START")
+        self.assertEqual(cycle.error, "")
+        self.assertEqual(cycle.index, 0)
+        self.assertEqual(ports.calls[-1], ("recover", None))
+
+    def test_controller_recovery_does_not_account_pending_return_or_allow_repick(self):
+        ports = Ports("return")
+        cycle = LoadingCycle(ports, 2)
+        submit(cycle, "initialize")
+        submit(cycle, "pick")
+        ports.fail = ""
+        self.assertTrue(submit(cycle, "recover"))
+        self.assertTrue(cycle.return_pending)
+        self.assertEqual(cycle.index, 0)
+        self.assertFalse(submit(cycle, "skip_initialize"))
+        self.assertFalse(submit(cycle, "pick"))
+        self.assertTrue(submit(cycle, "reset"))
+        self.assertEqual(cycle.index, 1)
+
+    def test_controller_recovery_needs_current_request_and_scene_confirmation(self):
+        cycle = LoadingCycle(Ports(), 1)
+        self.assertFalse(cycle.submit("recover", "stale", 1, True))
+        self.assertFalse(cycle.submit("recover", cycle.request_id, 1, False))
+        self.assertEqual(cycle.ports.calls, [])
+
     def test_reset_after_pick_failure_preserves_index(self):
         ports = Ports("pick_place")
         cycle = LoadingCycle(ports, 2)

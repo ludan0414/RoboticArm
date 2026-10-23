@@ -21,6 +21,20 @@ one detect/pick/place/release/exit/return cycle and also confirms the reviewed
 scene and previous placement. Only settled return re-enables confirmation.
 Any failure latches; no automatic retry, target reuse, or vacuum cleanup.
 
+Two explicit commissioning recovery commands are authorized only with the
+current request ID, schema version and scene confirmation, while no cycle is
+running. `recover` uses the existing executor connection to stop and establish
+StandBy (resetting a genuine controller fault or enabling a disabled group as
+needed), without vacuum or return motion. It clears the application fault only
+after positive feedback and requires a new initialization/reset afterward.
+`reset` additionally authorizes release/drop of a held payload. It requires new
+post-command empty-tool and pump-off feedback, removes only the pickup
+attachment, and plans a return to the profile observation pose. It never marks
+an unknown drop as a placement or deletes existing placed-box obstacles.
+The operator reviews the drop area and return path; the dropped box is not
+measured cargo occupancy. Pending successful placements count only after
+confirmed return, including after controller-only recovery.
+
 Its frozen site target list is planning intent. Released payload dimensions
 come from pickup perception; their target-position collision proxies are
 explicitly expected placements, retained for collision checking only, never

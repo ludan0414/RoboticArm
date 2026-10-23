@@ -24,7 +24,9 @@ class HardwareStatusTest(unittest.TestCase):
         self.assertEqual(fsm_label(33), "待机 StandBy")
         self.assertEqual(fsm_severity(33), "ok")
         self.assertEqual(fsm_severity(21), "fault")
-        self.assertEqual(fsm_severity(34), "moving")
+        self.assertEqual(fsm_severity(25), "moving")
+        self.assertEqual(fsm_severity(34), "warn")
+        self.assertIn("ScriptRunning", fsm_label(34))
         self.assertIn("未初始化", hrif_hint(40071))
         self.assertIn("StandBy", hrif_hint(40025))
 
@@ -44,6 +46,23 @@ class HardwareStatusTest(unittest.TestCase):
         self.assertTrue(should_keep_event("InitServoEsJ", 0))
         self.assertTrue(should_keep_event("PushServoJ", 40071))
         self.assertFalse(should_keep_event("PushServoJ", 0))
+
+    def test_historical_fault_does_not_mark_current_standby_faulted(self):
+        snap = build_snapshot(connection="READY", fsm_id=33,
+            last_fault=make_hrif_event("InitServoEsJ", 40025))
+        self.assertFalse(snap["current_fault"])
+        self.assertEqual(snap["last_fault"]["code"], 40025)
+
+    def test_faulted_application_still_reads_fresh_controller_state(self):
+        iface = HuayanInterface.__new__(HuayanInterface)
+        iface._ensure_hw()
+        iface._last_fsm_id, iface._last_fsm_desc = 33, "cached"
+        iface._state = ConnectionState.ERROR
+        iface._state_lock = __import__("threading").Lock()
+        iface._read_fsm = lambda: (25, "Moving")
+        self.assertEqual(iface.hardware_status(refresh_fsm=True)["fsm_id"], 25)
+        iface._read_fsm = lambda: (None, None)
+        self.assertIsNone(iface.hardware_status(refresh_fsm=True)["fsm_id"])
 
     def test_interface_records_40071_for_the_console(self):
         iface = HuayanInterface.__new__(HuayanInterface)

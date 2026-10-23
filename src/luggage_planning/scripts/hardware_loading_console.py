@@ -19,6 +19,7 @@ from hardware_pick_driver import (
 )
 from luggage_planning.hardware_loading_cycle import LoadingCycle, parse_profile, loading_box_prompt
 from luggage_planning.pose import MotionSegment
+from luggage_planning.release_confirmation import wait_for_release
 from luggage_planning.hardware_motion_guard import (HardwareMotionGuard, axis_test_segments,
                                                     quaternion_angle)
 from luggage_planning.pose import Point, Pose, Quaternion
@@ -43,6 +44,16 @@ def vacuum_view(driver):
     age = None if received is None else time.monotonic() - received
     state = dict(getattr(driver, "_vacuum_state", {}) or {})
     state["age_sec"] = None if age is None else round(age, 2)
+    return state
+
+
+def hardware_view(driver):
+    state = dict(getattr(driver, "_console_hardware", {}) or {})
+    received = getattr(driver, "_console_hardware_received_at", None)
+    age = None if received is None else time.monotonic() - received
+    state["age_sec"] = age
+    if age is None or age > 2.0:
+        state.update(available=False, stale=True)
     return state
 
 
@@ -92,12 +103,12 @@ pre{white-space:pre-wrap;font-size:13px}
 <div class="kv"><span>关节 °</span><span id="robot-joints"></span></div>
 <p id="robot-missing"></p>
 </div>
-<div id="hrif-card" class="card unknown"><h2>最近 HRIF / ServoJ</h2>
+<div id="hrif-card" class="card unknown"><h2>最近 HRIF / ServoJ 记录</h2>
 <div class="kv"><span>命令</span><span id="hrif-name"></span></div>
 <div class="kv"><span>错误码</span><span id="hrif-code" class="big"></span></div>
 <div class="kv"><span>含义</span><span id="hrif-hint"></span></div>
 <div class="kv"><span>原文</span><span id="hrif-message"></span></div>
-<div class="kv"><span>上次故障</span><span id="hrif-fault"></span></div>
+<div class="kv"><span>历史最近故障（不代表当前状态）</span><span id="hrif-fault"></span></div>
 </div>
 <div id="vac-card" class="card unknown"><h2>真空 / 执行器事件</h2>
 <div class="kv"><span>吸附</span><span id="vac-attached"></span></div>
@@ -114,16 +125,19 @@ pre{white-space:pre-wrap;font-size:13px}
 <p>测试顺序：+X、-X、+Y、-Y、+Z、-Z，每次都复位。请现场确认：+X 向左，+Y 向后，+Z 向上。完成动作不代表已自动验证物理方向。</p>
 <p><button id="start" disabled>初始化归位（可选）</button> <button id="skip" disabled>跳过初始化，从当前位置开始</button></p>
 <p><button id="pick" disabled>开始 Pick</button></p>
-<p><button id="reset" disabled>空载复位到观察位（保留箱序）</button></p>
-<p>复位前确认机械臂已停止、工具空载。本箱如已实际放入但系统尚未记为完成，先人工处理该箱；复位不会猜测放置成功或清除舱内占位。</p>
+<p><button id="recover" disabled>停止并恢复待机（不松吸、不回位）</button></p>
+<p id="recover-result"></p>
+<p><button id="reset" disabled>松吸掉箱并回位（保留箱序）</button></p>
+<p id="reset-target"></p>
+<p>掉箱复位会停止机械臂、关闭吸盘，允许当前箱子掉落，确认松吸后再规划回位。请确认掉落区域和回位路径。掉落箱体位置未测量；复位不清除舱内占位，也不猜测本箱放置成功。</p>
 <h2 id="next-box"></h2>
 <p id="page-error"></p>
 <p>故障后锁定，不自动松吸或重试。此网页不提供急停，请使用现场实体急停。</p>
 <details><summary>原始 JSON</summary><pre id="status"></pre></details>
 <script>
 let current=null, pending=false;
-const ack=document.getElementById('ack'), a=document.getElementById('start'), s=document.getElementById('skip'), b=document.getElementById('pick'), t=document.getElementById('axes'), r=document.getElementById('reset');
-function enable(){a.disabled=s.disabled=pending||!ack.checked||current?.state!=='WAIT_START';b.disabled=pending||!ack.checked||current?.state!=='WAIT_PICKUP_READY';t.disabled=pending||!ack.checked||!['WAIT_START','WAIT_PICKUP_READY'].includes(current?.state);r.disabled=pending||!ack.checked||!['WAIT_START','WAIT_PICKUP_READY','FAULT'].includes(current?.state);}
+const ack=document.getElementById('ack'), a=document.getElementById('start'), s=document.getElementById('skip'), b=document.getElementById('pick'), t=document.getElementById('axes'), r=document.getElementById('reset'), restore=document.getElementById('recover');
+function enable(){a.disabled=s.disabled=pending||!ack.checked||current?.state!=='WAIT_START'||current?.return_pending;b.disabled=pending||!ack.checked||current?.state!=='WAIT_PICKUP_READY'||current?.return_pending;t.disabled=pending||!ack.checked||current?.return_pending||!['WAIT_START','WAIT_PICKUP_READY'].includes(current?.state);r.disabled=restore.disabled=pending||!ack.checked||!['WAIT_START','WAIT_PICKUP_READY','FAULT'].includes(current?.state);}
 function txt(id,v){document.getElementById(id).textContent=v==null||v===''?'—':String(v);}
 function paint(id,sev){document.getElementById(id).className='card '+(sev||'unknown');}
 function ago(mono,now){if(!mono)return '—';const d=now-mono;if(d<0)return '0.0s';return d.toFixed(1)+'s 前';}
@@ -133,6 +147,10 @@ function render(){
   const vac=current.vacuum||{};
   const now=hw.monotonic_sec||0;
   txt('next-box',current.next_box_prompt);
+  const target=current.reset_target||{}, p=target.position||{};
+  txt('reset-target',target.frame_id?'回位目标：'+target.frame_id+'，XYZ (m) = '+[p.x,p.y,p.z].map(v=>Number(v).toFixed(3)).join(', '):'');
+  const recovery=hw.recovery||{};
+  txt('recover-result',recovery.stage?('最近恢复：'+recovery.stage+' · '+(recovery.message||'')):'');
   txt('cycle-state',current.state);
   txt('cycle-stage',current.stage);
   txt('cycle-box',(current.completed||0)+' / '+(current.total||0));
@@ -148,7 +166,7 @@ function render(){
     paint('robot-card',hw.fsm_severity||'unknown');
   }else{
     txt('robot-fsm','无数据');
-    txt('robot-fsm-label','执行器未发布 /elfin/hardware_status');
+    txt('robot-fsm-label',hw.stale?'控制器状态数据缺失或已过期':'执行器未发布 /elfin/hardware_status');
     txt('robot-conn','—');txt('robot-exec','—');txt('robot-joints','—');
     txt('robot-missing','重启 trajectory_executor 后才会有 FSM / 40071');
     paint('robot-card','unknown');
@@ -160,7 +178,7 @@ function render(){
   txt('hrif-message',last.message||'');
   const fault=hw.last_fault||{};
   txt('hrif-fault',fault.name?fault.name+' '+fault.code+' · '+ (fault.hint||fault.message||'')+' · '+ago(fault.monotonic_sec,now):'无');
-  paint('hrif-card',last.severity|| (fault.severity||'ok'));
+  paint('hrif-card',hw.available?(hw.current_fault?'fault':'ok'):'unknown');
   txt('vac-attached',vac.attached==null?'—':vac.attached);
   txt('vac-on',vac.vacuum_on==null?'—':vac.vacuum_on);
   txt('vac-age',vac.age_sec==null?'无':' '+vac.age_sec+'s');
@@ -171,13 +189,25 @@ function render(){
   document.getElementById('event-log').innerHTML=rows.length?rows.map(e=>'<tr class="'+ (e.severity||'')+'"><td>'+ago(e.monotonic_sec,now)+'</td><td>'+ (e.name||'')+'</td><td>'+ (e.code==null?'':e.code)+'</td><td>'+ (e.hint||e.message||'')+(e.index==null?'':' #'+e.index)+'</td></tr>').join(''):'<tr><td colspan="4">尚无 Init/Start/40071/40025 记录</td></tr>';
   document.getElementById('status').textContent=JSON.stringify(current,null,2);
 }
-async function refresh(){try{current=await(await fetch('/status')).json();render();enable();}catch(e){a.disabled=s.disabled=b.disabled=t.disabled=r.disabled=true;}}
+async function refresh(){try{current=await(await fetch('/status')).json();render();enable();}catch(e){a.disabled=s.disabled=b.disabled=t.disabled=r.disabled=restore.disabled=true;}}
 async function send(command){pending=true;enable();try{const r=await fetch('/command',{method:'POST',headers:{'Content-Type':'application/json','X-Console-Token':'TOKEN'},body:JSON.stringify({command,request_id:current.request_id,schema_version:1,scene_confirmed:ack.checked})});if(!r.ok)throw Error(await r.text());ack.checked=false;document.getElementById('page-error').textContent='';}catch(e){document.getElementById('page-error').textContent=e.message;}finally{pending=false;await refresh();}}
-a.onclick=()=>send('initialize');s.onclick=()=>send('skip_initialize');b.onclick=()=>send('pick');t.onclick=()=>send('axis_test');r.onclick=()=>send('reset');ack.onchange=enable;setInterval(refresh,400);refresh();
+a.onclick=()=>send('initialize');s.onclick=()=>send('skip_initialize');b.onclick=()=>send('pick');t.onclick=()=>send('axis_test');r.onclick=()=>send('reset');restore.onclick=()=>send('recover');ack.onchange=enable;setInterval(refresh,400);refresh();
 </script>"""
 
 
 class CommissioningDriver(HardwarePickDriver):
+    def recover_controller(self):
+        """Use the existing executor's CPS connection; never open a second one."""
+        from std_srvs.srv import Trigger
+        if not hasattr(self, "_recovery_client"):
+            self._recovery_client = self.create_client(Trigger, "/elfin/recover_standby")
+        if not self._recovery_client.wait_for_service(timeout_sec=2.0):
+            return False, "executor recovery service unavailable; restart updated executor"
+        response = self._call_srv(self._recovery_client, Trigger.Request(), 20.0)
+        if response is None:
+            return False, "recovery RPC timed out; physical result unknown"
+        return bool(response.success), str(response.message)
+
     """Keep nominal placed-box collision proxies separate from cargo mapping."""
     release_touch_links = ("suction_panel", "suction_contact_frame")
     exclusive_trace = True
@@ -301,14 +331,21 @@ class HardwarePorts:
         received = self.driver._vacuum_received_at
         if (received is None or time.monotonic() - received > getattr(self.driver._args, "vacuum_state_max_age_sec", 2.0)
                 or ports.di0() != 0
+                or self.driver._vacuum_state.get("attached", True)
                 or self.driver._vacuum_state.get("vacuum_on", True)):
             raise RuntimeError("fresh empty tool / vacuum off not confirmed")
 
+    def recover_controller(self):
+        self.driver.report_stage("RECOVERING_CONTROLLER")
+        self.record(dict(event="controller_recovery_requested"))
+        ok, message = self.driver.recover_controller()
+        self.record(dict(event="controller_recovery_result", ok=ok, message=message))
+        if not ok:
+            raise RuntimeError("RESET_CONTROLLER: " + message)
+
     def reset_observe(self):
-        """Explicit empty-tool recovery; never release a held/unknown box."""
-        ready, reason = self.driver.wait_graph()
-        if not ready:
-            raise RuntimeError("RESET_GRAPH: " + reason)
+        """Operator-authorized payload drop, then configured MoveIt return."""
+        self.recover_controller()
         ports = RosPickSessionPorts(self.driver, self.driver)
         try:
             received = self.driver._vacuum_received_at
@@ -317,16 +354,24 @@ class HardwarePorts:
             self.record(dict(event="reset_preflight", vacuum=state,
                 vacuum_age_sec=None if received is None else time.monotonic()-received,
                 di0=ports.di0()))
-            if (received is None or time.monotonic()-received > maximum
-                    or ports.di0() != 0 or state.get("attached", True)):
-                raise RuntimeError("RESET_REFUSED: empty tool not confirmed; suction preserved")
-            if state.get("vacuum_on", True):
-                ok, message = self.driver.vacuum(False)
-                if not ok:
-                    raise RuntimeError("RESET_PUMP: " + message)
-                deadline = time.monotonic() + self.driver._args.release_deadline_sec
-                while self.driver._vacuum_state.get("vacuum_on", True) and time.monotonic() < deadline:
-                    time.sleep(.05)
+            self.driver.report_stage("RESET_RELEASE")
+            commanded_at = time.monotonic()
+            ok, message = self.driver.vacuum(False)
+            self.record(dict(event="reset_release_result", ok=ok, message=message))
+            if not ok:
+                raise RuntimeError("RESET_PUMP: " + message)
+            wait_for_release(
+                lambda: (self.driver._vacuum_received_at, dict(self.driver._vacuum_state)),
+                ports.di0, commanded_at, self.driver._args.release_deadline_sec, maximum)
+            # A dropped payload is not a placement at the frozen target. Remove
+            # only the pickup attachment, never create a placed-target proxy.
+            ok, message = self.driver._scene_client().detach_and_remove()
+            if not ok:
+                raise RuntimeError("RESET_DETACH: " + message)
+            self.driver._scene_box = None
+            ok, message = self.driver.set_pickup_touch(False)
+            if not ok:
+                raise RuntimeError("RESET_TOUCH: " + message)
         finally:
             ports.close()
         self.prepare()
@@ -412,7 +457,10 @@ def main(argv=None):
 
     def _on_hardware(msg):
         try:
-            driver._console_hardware = json.loads(msg.data)
+            state = json.loads(msg.data)
+            if isinstance(state, dict):
+                driver._console_hardware = state
+                driver._console_hardware_received_at = time.monotonic()
         except (TypeError, ValueError, json.JSONDecodeError):
             pass
 
@@ -450,12 +498,14 @@ def main(argv=None):
                 self.reply(200, PAGE.replace("TOKEN", token), "text/html")
             elif self.path == "/status":
                 snapshot = cycle.snapshot()
+                snapshot["reset_target"] = dict(frame_id="world",
+                    position=vars(observe.position), orientation=vars(observe.orientation))
                 profile = json.loads(raw_profile)
                 self.reply(200, json.dumps(merge_console_status(
                     snapshot,
                     loading_box_prompt(profile, snapshot),
                     vacuum_view(driver),
-                    getattr(driver, "_console_hardware", {"available": False}),
+                    hardware_view(driver),
                     getattr(driver, "_console_event", {}),
                 )))
             else:

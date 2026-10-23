@@ -6,19 +6,13 @@ console can show without a second CPS connection.
 from __future__ import annotations
 
 from typing import Any, Mapping, Optional
+from .controller_state import LABELS, FAULTS, MOVING, JOGGING, STOPPING, HOLDING
 
 HARDWARE_STATUS_TOPIC = "/elfin/hardware_status"
 SCHEMA = "elfin_hardware_status/v1"
 EVENT_LIMIT = 16
 
-FSM_LABELS = {
-    5: "急停 ESTOP",
-    21: "碰撞停止 CollisionStop",
-    22: "控制器错误 Error",
-    23: "使能中 Enabling",
-    24: "未使能 Disable",
-    33: "待机 StandBy",
-}
+FSM_LABELS = LABELS
 
 HRIF_HINTS = {
     0: "成功",
@@ -28,7 +22,7 @@ HRIF_HINTS = {
     40083: "交融/到位查询失败",
 }
 
-NOTABLE_OK = frozenset({"InitServoEsJ", "StartServo", "GrpStop", "GrpReset"})
+NOTABLE_OK = frozenset({"InitServoEsJ", "StartServo", "GrpStop", "GrpReset", "GrpEnable"})
 
 
 def fsm_label(fsm_id: Optional[int]) -> str:
@@ -36,19 +30,17 @@ def fsm_label(fsm_id: Optional[int]) -> str:
         return "未知"
     if int(fsm_id) in FSM_LABELS:
         return FSM_LABELS[int(fsm_id)]
-    if int(fsm_id) > 33:
-        return "运动/伺服中 FSM %s" % fsm_id
     return "FSM %s" % fsm_id
 
 
 def fsm_severity(fsm_id: Optional[int]) -> str:
-    if fsm_id in (5, 21, 22):
+    if fsm_id in FAULTS:
         return "fault"
     if fsm_id == 33:
         return "ok"
-    if fsm_id is not None and int(fsm_id) > 33:
+    if fsm_id in (MOVING, JOGGING, STOPPING, HOLDING):
         return "moving"
-    if fsm_id in (23, 24):
+    if fsm_id in (23, 24, 28, 34, 35, 36, 37, 38):
         return "warn"
     return "unknown"
 
@@ -124,6 +116,7 @@ def build_snapshot(
         "fsm_label": fsm_label(fsm_id),
         "fsm_severity": fsm_severity(fsm_id),
         "ready_for_servo": fsm_id == 33,
+        "current_fault": fsm_id in FAULTS or connection == "ERROR",
         "last_hrif": dict(last_hrif) if last_hrif else None,
         "last_fault": dict(last_fault) if last_fault else None,
         "events": [dict(item) for item in (events or [])],

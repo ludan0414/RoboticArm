@@ -44,56 +44,98 @@ def load_console():
 
 
 class AdapterTests(unittest.TestCase):
+    def test_hardware_feedback_expiry_never_reports_current_state_available(self):
+        module = load_console()
+        driver = SimpleNamespace(_console_hardware={"available": True, "fsm_id": 33},
+            _console_hardware_received_at=time.monotonic()-10)
+        self.assertFalse(module.hardware_view(driver)["available"])
+        driver._console_hardware_received_at = time.monotonic()
+        self.assertTrue(module.hardware_view(driver)["available"])
+
     def setUp(self):
         self.module = load_console()
         self.driver = SimpleNamespace(di0=0, healthy=True, motion_ok=True,
             _vacuum_received_at=time.monotonic(),
             _args=SimpleNamespace(vacuum_state_max_age_sec=2.0),
             validate_scene_frame=lambda: None,
-            _vacuum_state={"vacuum_on": False}, moves=[], closes=0,
+            _vacuum_state={"vacuum_on": False, "attached": False}, moves=[], closes=0,
             report_stage=lambda _stage: None)
         self.ports = self.module.HardwarePorts(self.driver, None, [], None, "test")
 
-    def test_reset_refuses_held_unknown_and_stale_without_motion_or_release(self):
-        self.driver.wait_graph = lambda: (True, "ok")
+    def configure_reset(self):
+        self.actions = []
+        self.driver.recover_controller = lambda: (self.actions.append("recover") or True, "ok")
         self.ports.record = lambda event: None
-        released = []
-        self.driver.vacuum = lambda enable: released.append(enable)
-        for di0, state, age in [(1, {"attached": True}, 0),
-                                (None, {}, 0), (0, {"attached": False}, 10)]:
-            self.driver.di0 = di0
-            self.driver._vacuum_state = state
-            self.driver._vacuum_received_at = time.monotonic() - age
-            with self.assertRaisesRegex(RuntimeError, "RESET_REFUSED"):
-                self.ports.reset_observe()
-        self.assertEqual(released, [])
-        self.assertEqual(self.driver.moves, [])
-
-    def test_empty_reset_switches_pump_off_before_return(self):
-        self.driver.wait_graph = lambda: (True, "ok")
-        self.driver._vacuum_state = {"attached": False, "vacuum_on": True}
+        self.ports.observe = Pose(Point(0, 1.2, .86), Quaternion())
         self.driver._args.release_deadline_sec = .01
-        self.ports.record = lambda event: None
-        self.ports.observe = SimpleNamespace(position=SimpleNamespace(x=0, y=1.2, z=.86))
-        actions = []
+        self.driver._scene_box = ([0, 0, 1], [0, 0, 0, 1], [.3, .4, .5])
         def release(enable):
-            actions.append(("vacuum", enable))
-            self.driver._vacuum_state["vacuum_on"] = False
+            self.actions.append("release")
+            self.assertFalse(enable)
+            self.driver._vacuum_state = dict(attached=False, vacuum_on=False)
+            self.driver._vacuum_received_at = time.monotonic()
+            self.driver.di0 = 0
             return True, "ok"
         self.driver.vacuum = release
-        self.ports.prepare = lambda: actions.append(("return", None))
-        self.ports.reset_observe()
-        self.assertEqual(actions, [("vacuum", False), ("return", None)])
+        def detach():
+            self.actions.append("detach")
+            return True, "ok"
+        self.driver._scene_client = lambda: SimpleNamespace(detach_and_remove=detach)
+        self.driver.set_pickup_touch = lambda allowed: (True, "ok")
+        self.ports.prepare = lambda: self.actions.append("return")
 
-    def test_empty_reset_returns_to_observe(self):
-        self.driver.wait_graph = lambda: (True, "ok")
-        self.driver._vacuum_state = {"attached": False, "vacuum_on": False}
-        self.ports.record = lambda event: None
-        self.ports.observe = SimpleNamespace(position=SimpleNamespace(x=0, y=1.2, z=.86))
-        prepared = []
-        self.ports.prepare = lambda: prepared.append(True)
-        self.ports.reset_observe()
-        self.assertEqual(prepared, [True])
+    def test_reset_explicitly_releases_held_unknown_and_stale_then_returns(self):
+        for di0, state, age in [(1, dict(attached=True, vacuum_on=True), 0),
+                                 (None, {}, 0), (0, dict(attached=False), 10)]:
+            self.configure_reset()
+            self.driver.di0, self.driver._vacuum_state = di0, state
+            self.driver._vacuum_received_at = time.monotonic() - age
+            self.ports.reset_observe()
+            self.assertEqual(self.actions, ["recover", "release", "detach", "return"])
+            self.assertIsNone(self.driver._scene_box)
+
+    def test_controller_failure_preserves_suction_and_starts_no_return(self):
+        self.configure_reset()
+        self.driver.recover_controller = lambda: (False, "40025")
+        with self.assertRaisesRegex(RuntimeError, "RESET_CONTROLLER"):
+            self.ports.reset_observe()
+        self.assertEqual(self.actions, [])
+
+    def test_release_failure_never_detaches_or_returns(self):
+        self.configure_reset()
+        self.driver.vacuum = lambda enable: (False, "release timeout")
+        with self.assertRaisesRegex(RuntimeError, "RESET_PUMP"):
+            self.ports.reset_observe()
+        self.assertEqual(self.actions, ["recover"])
+        self.assertIsNotNone(self.driver._scene_box)
+
+    def test_successful_rpc_without_new_feedback_never_detaches_or_returns(self):
+        self.configure_reset()
+        self.driver._vacuum_state = dict(attached=False, vacuum_on=False)
+        self.driver.vacuum = lambda enable: (True, "ok")
+        with self.assertRaisesRegex(RuntimeError, "UNCONFIRMED"):
+            self.ports.reset_observe()
+        self.assertEqual(self.actions, ["recover"])
+
+    def test_failed_detach_preserves_geometry_and_blocks_return(self):
+        self.configure_reset()
+        self.driver._scene_client = lambda: SimpleNamespace(
+            detach_and_remove=lambda: (False, "scene unavailable"))
+        with self.assertRaisesRegex(RuntimeError, "RESET_DETACH"):
+            self.ports.reset_observe()
+        self.assertEqual(self.actions, ["recover", "release"])
+        self.assertIsNotNone(self.driver._scene_box)
+
+    def test_return_failure_does_not_report_reset_complete(self):
+        self.configure_reset()
+        events = []
+        self.ports.record = events.append
+        def fail_return():
+            raise RuntimeError("MoveIt failed")
+        self.ports.prepare = fail_return
+        with self.assertRaisesRegex(RuntimeError, "MoveIt failed"):
+            self.ports.reset_observe()
+        self.assertNotIn("reset_complete", [event["event"] for event in events])
 
     def test_return_executes_all_segments_and_closes_subscription_ports(self):
         self.ports.execute([MotionSegment(name="exit"), MotionSegment(name="observe")])

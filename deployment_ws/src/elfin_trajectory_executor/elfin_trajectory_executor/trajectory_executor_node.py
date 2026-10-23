@@ -30,7 +30,7 @@ from builtin_interfaces.msg import Duration
 from control_msgs.action import FollowJointTrajectory
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Header, String
-from std_srvs.srv import SetBool
+from std_srvs.srv import SetBool, Trigger
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
 from .execution_contract import (
@@ -210,6 +210,9 @@ class TrajectoryExecutorNode(Node):
             callback_group=self._cb_group,
         )
         if isinstance(self._iface, HuayanInterface):
+            self.create_service(
+                Trigger, "/elfin/recover_standby", self._handle_recover_standby,
+                callback_group=self._cb_group)
             self.create_service(
                 SetBool, "/elfin/vacuum/set_do0",
                 lambda req, res: self._handle_set_do(0, req, res),
@@ -452,7 +455,36 @@ class TrajectoryExecutorNode(Node):
         if self._vacuum_pub is not None:
             self._vacuum_pub.publish(self._iface)
 
+    def _handle_recover_standby(self, request, response):
+        # Same reservation as trajectories: reject overlap, including admission.
+        if not self._goal_owner.try_reserve_operation("controller_recovery"):
+            response.success, response.message = False, "executor busy; cancel active goal first"
+            return response
+        try:
+            self._publish_status("recovering")
+            self._publish_event("controller_recovery_started")
+            response.success, response.message = self._iface.recover_standby()
+            self._publish_status("idle" if response.success else "error")
+            self._publish_event("controller_recovered" if response.success
+                                else "controller_recovery_failed",
+                                error_string="" if response.success else response.message)
+        except Exception as exc:
+            response.success, response.message = False, str(exc)
+            self._publish_status("error")
+        finally:
+            self._goal_owner.release("controller_recovery")
+        return response
+
     def _handle_set_do(self, which: int, request, response):
+        if not self._goal_owner.try_reserve_operation("vacuum_io"):
+            response.success, response.message = False, "executor busy"
+            return response
+        try:
+            return self._apply_set_do(which, request, response)
+        finally:
+            self._goal_owner.release("vacuum_io")
+
+    def _apply_set_do(self, which: int, request, response):
         bit = (
             self._iface.vacuum_do0_bit if which == 0
             else self._iface.vacuum_do1_bit
@@ -584,7 +616,7 @@ class TrajectoryExecutorNode(Node):
         getter = getattr(self._iface, "hardware_status", None)
         if not callable(getter):
             return
-        payload = getter()
+        payload = getter(refresh_fsm=True)
         payload["executor"] = getattr(self, "_last_status", "")
         payload["stamp_ns"] = int(self.get_clock().now().nanoseconds)
         msg = String()
