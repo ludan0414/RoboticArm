@@ -29,8 +29,8 @@ class Joint6HoldTest(unittest.TestCase):
         for name in ("pre_grasp", "approach", "attach",
                      "pick_retreat", "retry_reverse"):
             self.assertTrue(pick_holds_joint6(name), name)
-        self.assertTrue(pick_holds_joint6("place_pickup_connect_1"))
-        self.assertTrue(pick_holds_joint6("place_pickup_connect_12"))
+        self.assertFalse(pick_holds_joint6("place_pickup_connect_1"))
+        self.assertFalse(pick_holds_joint6("place_pickup_connect_12"))
         for name in ("transit", "traverse", "insert", "descend", "retreat",
                      "place_via_0", "pre_place", "place_descend"):
             self.assertFalse(pick_holds_joint6(name), name)

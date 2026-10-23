@@ -153,6 +153,10 @@ class RosPickSessionPorts:
         ok, message, result = self._driver._send_action(
             self._driver._plan, goal, self._driver._args.plan_timeout,
             "PlanMotion:%s" % segment.name)
+        self.log_event(dict(stage="motion_result", name=segment.name, ok=ok,
+            message=message, fraction=float(getattr(result, "fraction", -1.0)),
+            target=vars(segment.target_pose.position), orientation=vars(segment.target_pose.orientation),
+            settle_json=str(getattr(result, "settle_json", "") or "")))
         return SegmentOutcome(
             ok=ok, message=message,
             fraction=float(getattr(result, "fraction", -1.0) or 0.0),
@@ -166,6 +170,16 @@ class RosPickSessionPorts:
 
     def vacuum_release(self, candidate_id=""):
         return self._driver.vacuum(False)
+
+    def validate_place_pose(self):
+        check = getattr(self._driver, "validate_place_pose", None)
+        if not callable(check):
+            return True, "no live sealed-grasp check configured"
+        result = check()
+        record = getattr(self._driver, "_last_place_pose_check", None)
+        if record is not None:
+            self.log_event(dict(stage="pre_release_pose", **record))
+        return result
 
     def di0(self):
         maximum = getattr(self._driver._args, "vacuum_state_max_age_sec", 2.0)
@@ -188,7 +202,11 @@ class RosPickSessionPorts:
         return ok, message
 
     def scene_attach(self):
-        return self._driver.attach_scene_box()
+        result = self._driver.attach_scene_box()
+        record = getattr(self._driver, "_sealed_grasp_record", None)
+        if result[0] and record is not None:
+            self.log_event(dict(stage="sealed_grasp", **record))
+        return result
 
     def scene_remove(self):
         return self._driver.remove_scene_box()

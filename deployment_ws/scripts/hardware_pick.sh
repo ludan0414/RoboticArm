@@ -37,6 +37,7 @@ set -euo pipefail
 
 DEPLOY="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO="$(cd "$DEPLOY/.." && pwd)"
+export MOTION_BOUNDARY_DUMP="${MOTION_BOUNDARY_DUMP:-${REPO}/docs/status/evidence/hardware_motion/$(date +%Y%m%d_%H%M%S)_$$}"
 if [[ -d "${REPO}/src/luggage_planning" ]]; then
   HUMBLE_WS="$REPO"
 else

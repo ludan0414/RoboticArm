@@ -11,11 +11,8 @@ JOINT6_NAME = "elfin_joint6"
 JOINT6_INDEX = 5
 
 #: Segment names that execute the pick approach/attach/lift. Place
-#: transit/insert keep slot yaw and must not hold J6. The first carry
-#: hops after pick (`place_pickup_connect_*`) are short sealed-cup
-#: connections; Cartesian IK can spin J6 several tenths of a radian
-#: over a few centimetres and trip PLACE_PATH_EXCURSION against the
-#: 0.05 m path floor. Those hops pin J6 too.
+#: transit/insert/connectors preserve the measured box/tool transform and must
+#: not rewrite an IK trajectory's J6 after solving the carrying orientation.
 PICK_HOLD_JOINT6_NAMES = frozenset((
     "pre_grasp",
     "approach",
@@ -23,12 +20,10 @@ PICK_HOLD_JOINT6_NAMES = frozenset((
     "pick_retreat",
     "retry_reverse",
 ))
-_PLACE_CONNECT_PREFIX = "place_pickup_connect_"
 
 
 def pick_holds_joint6(segment_name):
-    name = str(segment_name)
-    return name in PICK_HOLD_JOINT6_NAMES or name.startswith(_PLACE_CONNECT_PREFIX)
+    return str(segment_name) in PICK_HOLD_JOINT6_NAMES
 
 
 def joint6_value(current_joints):

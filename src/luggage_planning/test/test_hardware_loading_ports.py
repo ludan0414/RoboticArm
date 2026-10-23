@@ -12,6 +12,9 @@ from luggage_planning.pose import MotionSegment, Point, Pose, Quaternion
 def load_console():
     driver_module = ModuleType("hardware_pick_driver")
     class BaseDriver:
+        def attach_scene_box(self):
+            self.events.append("attach")
+            return True, "attached"
         def remove_scene_box(self):
             self.events.append("detach")
             self._scene_box = None
@@ -44,6 +47,57 @@ def load_console():
 
 
 class AdapterTests(unittest.TestCase):
+    def test_seal_records_actual_tool_tf_instead_of_candidate_orientation(self):
+        from luggage_planning.policy_place import box_pose_from_grasp
+        module = load_console()
+        driver = module.CommissioningDriver()
+        driver.events = []
+        driver._scene_box = ([.1,.2,.3],[0,0,0,1],[.3,.4,.5])
+        sealed = Pose(Point(.12,.18,.55),Quaternion(1,0,0,0))
+        seen = []
+        def lookup(target, source, fresh=False):
+            seen.append((target,source,fresh))
+            return sealed
+        driver.lookup_pose = lookup
+        driver.get_logger = lambda: SimpleNamespace(info=lambda message: None)
+        self.assertTrue(driver.attach_scene_box()[0])
+        box = box_pose_from_grasp(sealed,driver._measured_grasp)
+        self.assertAlmostEqual(box.position.x,.1)
+        self.assertAlmostEqual(box.position.z,.3)
+        self.assertEqual(seen,[("world","suction_contact_frame",True)])
+
+    def test_repeated_return_resolves_from_nominal_and_keeps_exit_route(self):
+        self.ports.nominal_observe = Pose(Point(0,1.6,.86),Quaternion())
+        root2 = 2**-.5
+        base = Pose(Point(0,0,.86),Quaternion(0,0,-root2,root2))
+        camera = Pose(Point(),Quaternion(0,root2,0,root2))
+        self.driver.lookup_pose = lambda target,source: base if source=="elfin_base_link" else camera
+        self.ports.record = lambda event: None
+        exit_segment=MotionSegment(name="exit")
+        self.ports.cycles=[(None,[exit_segment,MotionSegment(name="return_observe")])]
+        captured=[]
+        self.ports.execute=lambda segments: captured.append(segments)
+        self.ports.return_observe(0)
+        self.ports.return_observe(0)
+        for segments in captured:
+            self.assertIs(segments[0],exit_segment)
+            self.assertAlmostEqual(segments[-1].target_pose.position.y,.8)
+            self.assertAlmostEqual(segments[-1].target_pose.position.z,.66)
+
+    def test_final_pose_check_refuses_yaw_error_before_release(self):
+        from luggage_planning.policy_place import measured_grasp_transform
+        module = load_console()
+        driver=module.CommissioningDriver()
+        box=Pose(Point(0,0,.2),Quaternion())
+        tool=Pose(Point(0,0,.4),Quaternion(1,0,0,0))
+        driver._measured_grasp=measured_grasp_transform(box,tool)
+        driver._args=SimpleNamespace(place_target_data=SimpleNamespace(box_pose=box))
+        driver.get_logger=lambda: SimpleNamespace(info=lambda message: None)
+        driver.lookup_pose=lambda *args,**kw: tool
+        self.assertTrue(driver.validate_place_pose()[0])
+        driver._args.place_target_data.box_pose=Pose(box.position,Quaternion(0,0,.1,(.99)**.5))
+        self.assertFalse(driver.validate_place_pose()[0])
+
     def test_hardware_feedback_expiry_never_reports_current_state_available(self):
         module = load_console()
         driver = SimpleNamespace(_console_hardware={"available": True, "fsm_id": 33},

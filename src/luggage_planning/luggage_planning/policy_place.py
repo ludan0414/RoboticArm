@@ -55,6 +55,23 @@ def parse_place_target(data):
     return PlaceTarget(_pose(data), clearance, via)
 
 
+def measured_grasp_transform(box_pose, tool_pose):
+    """T_box_tool at actual sealed contact, not the pre-pick IK request."""
+    box_q = _quaternion([getattr(box_pose.orientation, k) for k in ("x", "y", "z", "w")])
+    tool_q = _quaternion([getattr(tool_pose.orientation, k) for k in ("x", "y", "z", "w")])
+    offset = quat_rotate(quat_conjugate(box_q), tuple(
+        getattr(tool_pose.position, k)-getattr(box_pose.position, k) for k in ("x", "y", "z")))
+    return offset, quat_mul(quat_conjugate(box_q), tool_q)
+
+
+def box_pose_from_grasp(tool_pose, grasp):
+    offset, relative_q = grasp
+    q = quat_mul(tool_pose.orientation, quat_conjugate(relative_q))
+    rotated = quat_rotate(q, offset)
+    return Pose(Point(*(getattr(tool_pose.position, k)-v
+                        for k, v in zip(("x", "y", "z"), rotated))), q)
+
+
 def grasp_transform(detection, candidate):
     """Measured T_box_tool shared by placement and the post-pick connector."""
     if detection.frame != "world" or candidate.frame != "world" or not detection.yaw_valid:
@@ -67,7 +84,7 @@ def grasp_transform(detection, candidate):
     return offset, quat_mul(quat_conjugate(pick_box_q), attach.orientation)
 
 
-def build_place_segments(target, detection, candidate):
+def build_place_segments(target, detection, candidate, measured_grasp=None):
     """Preserve the selected grasp transform: T_world_tool = T_world_box T_box_tool.
 
     Approach/retreat are vertical in world. Optional policy via poses describe
@@ -77,7 +94,8 @@ def build_place_segments(target, detection, candidate):
         raise ValueError("pick observation and candidate must be in world")
     if not detection.yaw_valid:
         raise ValueError("policy box orientation requires a measured valid pick yaw")
-    offset, relative_q = grasp_transform(detection, candidate)
+    offset, relative_q = (measured_grasp if measured_grasp is not None
+                          else grasp_transform(detection, candidate))
 
     def tool_pose(box_pose, lift=0.0):
         rotated = quat_rotate(box_pose.orientation, offset)
@@ -170,6 +188,12 @@ def run_place(ports, segments, use_scene=True, low_hold_sec=0.5,
                 return 10, "PLACE_CARRY_FAULT [%s]: %s" % (segment.name, outcome.message)
         if ports.di0() != 1:
             return 10, "PLACE_CARRY_FAULT: DI0 lost before release"
+        validate_pose = getattr(ports, "validate_place_pose", None)
+        if callable(validate_pose):
+            ok, reason = validate_pose()
+            log("place_pose_check", ok=ok, message=reason)
+            if not ok:
+                return 10, "PLACE_POSE_NOT_ALIGNED: " + reason
         release_started = True
         ok, reason = ports.vacuum_release("place")
         log("place_release", ok=ok, message=reason)

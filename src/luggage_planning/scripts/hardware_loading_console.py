@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Persistent local commissioning console. Startup never authorizes motion."""
 import argparse
+from dataclasses import replace
 import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -20,6 +21,9 @@ from hardware_pick_driver import (
 from luggage_planning.hardware_loading_cycle import LoadingCycle, parse_profile, loading_box_prompt
 from luggage_planning.pose import MotionSegment
 from luggage_planning.release_confirmation import wait_for_release
+from luggage_planning.return_pose import (adjusted_return_pose, DEFAULT_OFFSET_BASE_M,
+                                         DEFAULT_CAMERA_FRAME)
+from luggage_planning.placement_approach import lower_final_approach
 from luggage_planning.hardware_motion_guard import (HardwareMotionGuard, axis_test_segments,
                                                     quaternion_angle)
 from luggage_planning.pose import Point, Pose, Quaternion
@@ -148,7 +152,7 @@ function render(){
   const now=hw.monotonic_sec||0;
   txt('next-box',current.next_box_prompt);
   const target=current.reset_target||{}, p=target.position||{};
-  txt('reset-target',target.frame_id?'回位目标：'+target.frame_id+'，XYZ (m) = '+[p.x,p.y,p.z].map(v=>Number(v).toFixed(3)).join(', '):'');
+  txt('reset-target',target.frame_id?'回位目标：'+target.frame_id+'，XYZ (m) = '+[p.x,p.y,p.z].map(v=>Number(v).toFixed(3)).join(', '):'回位目标待 TF 解析；相对原观察位的底座偏移 (m)：'+(current.reset_offset_base_m||[]).join(', '));
   const recovery=hw.recovery||{};
   txt('recover-result',recovery.stage?('最近恢复：'+recovery.stage+' · '+(recovery.message||'')):'');
   txt('cycle-state',current.state);
@@ -196,6 +200,48 @@ a.onclick=()=>send('initialize');s.onclick=()=>send('skip_initialize');b.onclick
 
 
 class CommissioningDriver(HardwarePickDriver):
+    # Rigid sealed-grasp estimate must reach these bounds before release.
+    place_position_tolerance_m = .01
+    place_orientation_tolerance_rad = math.radians(2)
+    def attach_scene_box(self):
+        """Freeze actual sealed-contact TF before the successful pick retreat."""
+        from luggage_planning.policy_place import measured_grasp_transform
+        self._measured_grasp = None
+        self._sealed_grasp_record = None
+        if self._scene_box is None:
+            return False, "measured scene box missing at seal"
+        xyz, quat, _size = self._scene_box
+        tool = self.lookup_pose("world", "suction_contact_frame", fresh=True)
+        grasp = measured_grasp_transform(Pose(Point(*xyz), Quaternion(*quat)), tool)
+        ok, message = super().attach_scene_box()
+        if ok:
+            self._measured_grasp = grasp
+            self._sealed_grasp_record = dict(
+                box_pose=dict(position=xyz, orientation=quat),
+                tool_pose=dict(position=vars(tool.position), orientation=vars(tool.orientation)),
+                offset_box_m=grasp[0], relative_orientation=vars(grasp[1]))
+        return ok, message
+
+    def validate_place_pose(self):
+        from luggage_planning.policy_place import box_pose_from_grasp
+        grasp = getattr(self, "_measured_grasp", None)
+        if grasp is None:
+            return False, "sealed grasp unavailable"
+        tool = self.lookup_pose("world", "suction_contact_frame", fresh=True)
+        estimated = box_pose_from_grasp(tool, grasp)
+        target = self._args.place_target_data.box_pose
+        position_error = math.dist(tuple(vars(estimated.position).values()),
+                                   tuple(vars(target.position).values()))
+        orientation_error = quaternion_angle(estimated.orientation, target.orientation)
+        self._last_place_pose_check = dict(
+            source="estimated_from_sealed_grasp", position=vars(estimated.position),
+            orientation=vars(estimated.orientation), position_error_m=position_error,
+            orientation_error_rad=orientation_error)
+        ok = (position_error <= self.place_position_tolerance_m
+              and orientation_error <= self.place_orientation_tolerance_rad)
+        return ok, "sealed-grasp box error %.4fm / %.2fdeg" % (
+            position_error, math.degrees(orientation_error))
+
     def recover_controller(self):
         """Use the existing executor's CPS connection; never open a second one."""
         from std_srvs.srv import Trigger
@@ -238,14 +284,20 @@ class CommissioningDriver(HardwarePickDriver):
         return self.motion_guard.check_pickup(detection, None)
 
     def prepare_place_segments(self, segments, detection=None, candidate=None):
-        from luggage_planning.policy_place import connect_place_from_pose
+        from luggage_planning.policy_place import connect_place_from_pose, build_place_segments
         actual = self.lookup_pose("world", "suction_contact_frame", fresh=True)
+        grasp = getattr(self, "_measured_grasp", None)
+        if detection is not None and candidate is not None:
+            if grasp is None:
+                raise RuntimeError("actual sealed-contact TF missing; refusing nominal grasp placement")
+            target = lower_final_approach(self._args.place_target_data)
+            segments = build_place_segments(target, detection, candidate, measured_grasp=grasp)
         config = getattr(self, "carry_entry_config", None)
         if config is not None:
             from luggage_planning.carry_entry import CarryEntry
             if detection is None or candidate is None:
                 raise RuntimeError("measured successful grasp required for high carry entry")
-            self._carry_entry = CarryEntry(config, detection, candidate)
+            self._carry_entry = CarryEntry(config, detection, candidate, measured_grasp=grasp)
             return self._carry_entry.connect(actual, segments)
         return connect_place_from_pose(actual, segments)
 
@@ -284,9 +336,29 @@ class CommissioningDriver(HardwarePickDriver):
 
 
 class HardwarePorts:
-    def __init__(self, driver, observe, cycles, journal, session):
+    def __init__(self, driver, observe, cycles, journal, session, return_settings=None):
         self.driver, self.observe, self.cycles = driver, observe, cycles
         self.journal, self.session = journal, session
+        settings = return_settings or {}
+        from luggage_planning.policy_place import _vector
+        self.nominal_observe = observe
+        self.return_offset = _vector(settings.get("offset_base_m", DEFAULT_OFFSET_BASE_M), 3,
+                                     "return offset_base_m")
+        self.return_camera_frame = settings.get("camera_optical_frame", DEFAULT_CAMERA_FRAME)
+        if not isinstance(self.return_camera_frame, str) or not self.return_camera_frame:
+            raise ValueError("return camera_optical_frame must be a nonempty frame name")
+        self.return_resolved = False
+
+    def resolve_return_pose(self):
+        base = self.driver.lookup_pose("world", "elfin_base_link")
+        camera = self.driver.lookup_pose("suction_contact_frame", self.return_camera_frame)
+        self.observe = adjusted_return_pose(self.nominal_observe, base, camera, self.return_offset)
+        self.return_resolved = True
+        self.record(dict(event="return_target_resolved", offset_base_m=self.return_offset,
+            base_pose=dict(position=vars(base.position), orientation=vars(base.orientation)),
+            camera_pose=dict(position=vars(camera.position), orientation=vars(camera.orientation)),
+            target=dict(position=vars(self.observe.position), orientation=vars(self.observe.orientation))))
+        return self.observe
 
     def record(self, event):
         record = {"time": time.time(), "session": self.session, **event}
@@ -379,6 +451,7 @@ class HardwarePorts:
 
     def prepare(self):
         self.prepare_current()
+        self.resolve_return_pose()
         self.execute([MotionSegment(name="initialize_observe", type="pose_target",
                                     target_pose=self.observe)])
 
@@ -397,6 +470,7 @@ class HardwarePorts:
         self.driver.validate_scene_frame()
         self.execute([])  # A held box or unknown vacuum state blocks a new pick.
         self.driver._args.place_target_data = self.cycles[index][0]
+        self.driver._measured_grasp = None
         self.driver.placed_proxy_id = "expected_placed_%s_%d" % (self.session, index)
         # Separate immutable trace per box, never overwrite a previous fault.
         self.driver._args.trace_out = "%s.box%03d.jsonl" % (self.journal.name, index + 1)
@@ -410,7 +484,9 @@ class HardwarePorts:
             raise RuntimeError("placed collision permissions: " + message)
 
     def return_observe(self, index):
-        self.execute(self.cycles[index][1])
+        segments = list(self.cycles[index][1])
+        segments[-1] = replace(segments[-1], target_pose=self.resolve_return_pose())
+        self.execute(segments)
 
 
 def main(argv=None):
@@ -447,7 +523,8 @@ def main(argv=None):
     driver.carry_entry_config = carry_config
     driver.segment_guard = driver.guard_segment
     driver.detection_guard = driver.guard_detection
-    ports = HardwarePorts(driver, observe, cycles, journal, session)
+    ports = HardwarePorts(driver, observe, cycles, journal, session,
+        json.loads(raw_profile).get("return_pose_adjustment"))
     ports.record(dict(event="session", profile_sha256=hashlib.sha256(raw_profile).hexdigest(),
                       profile=json.loads(raw_profile), session=session))
     cycle = LoadingCycle(ports, len(cycles))
@@ -498,8 +575,10 @@ def main(argv=None):
                 self.reply(200, PAGE.replace("TOKEN", token), "text/html")
             elif self.path == "/status":
                 snapshot = cycle.snapshot()
-                snapshot["reset_target"] = dict(frame_id="world",
-                    position=vars(observe.position), orientation=vars(observe.orientation))
+                snapshot["reset_target"] = (dict(frame_id="world",
+                    position=vars(ports.observe.position), orientation=vars(ports.observe.orientation))
+                    if ports.return_resolved else None)
+                snapshot["reset_offset_base_m"] = list(ports.return_offset)
                 profile = json.loads(raw_profile)
                 self.reply(200, json.dumps(merge_console_status(
                     snapshot,

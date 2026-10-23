@@ -10,6 +10,23 @@ from export_hardware_loading_profile import export_profile, post_place_exit_indi
 
 
 class LoadingObservationTests(unittest.TestCase):
+    def assert_profile_close(self, actual, expected):
+        # Normalizing saved quaternions can differ by one float ULP across
+        # NumPy/platform versions (observed maximum 1.11e-16). Keep structure,
+        # strings and list order exact; permit only 1e-12 numeric roundoff.
+        if isinstance(expected, dict):
+            self.assertEqual(set(actual),set(expected))
+            for key in expected:
+                self.assert_profile_close(actual[key],expected[key])
+        elif isinstance(expected, list):
+            self.assertEqual(len(actual),len(expected))
+            for left,right in zip(actual,expected):
+                self.assert_profile_close(left,right)
+        elif isinstance(expected,float):
+            self.assertAlmostEqual(actual,expected,delta=1e-12)
+        else:
+            self.assertEqual(actual,expected)
+
     @classmethod
     def setUpClass(cls):
         cls.root = Path(__file__).parent
@@ -44,7 +61,7 @@ class LoadingObservationTests(unittest.TestCase):
             np.testing.assert_allclose(self.base_xyz(returning), [-1.2, 0, 0], atol=.01)
 
     def test_deployment_profile_uses_same_observe_and_post_place_exit(self):
-        self.assertEqual(self.profile, export_profile(self.bundle))
+        self.assert_profile_close(self.profile, export_profile(self.bundle))
         np.testing.assert_allclose(self.base_xyz(self.profile["observe_tool_pose"]["position_m"]), [-1.2, 0, 0], atol=.01)
         for row, cycle in zip(self.plan["sequence"], self.profile["cycles"]):
             indices = post_place_exit_indices(self.data, row["id"])

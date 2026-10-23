@@ -35,6 +35,16 @@ The operator reviews the drop area and return path; the dropped box is not
 measured cargo occupancy. Pending successful placements count only after
 confirmed return, including after controller-only recovery.
 
+Commissioning placement derives the box/tool transform from detected box pose
+and fresh actual tool TF at sealed contact. Carry routing and clearance share
+that transform; carrying joint paths must not have J6 overwritten afterward.
+The final near-target route may lower before full extension, but still requires
+complete live collision-checked planning. Before release, a fresh tool TF must
+imply box pose within 1cm and 2 degrees of the requested target under the rigid
+grasp model. This is not a post-placement visual verification or slip detection.
+Return translation is resolved in actual robot-base axes; camera optical heading
+is resolved through fixed TF without changing canonical sensor calibration.
+
 Its frozen site target list is planning intent. Released payload dimensions
 come from pickup perception; their target-position collision proxies are
 explicitly expected placements, retained for collision checking only, never

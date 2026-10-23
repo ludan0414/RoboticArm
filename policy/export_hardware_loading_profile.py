@@ -93,6 +93,8 @@ def export_profile(bundle):
               for name in ("plan.json", "trajectory.npz", "scene_tf.yaml")}
     return dict(profile="site_commissioning_v1", frame_id="world",
                 tool_frame="suction_contact_frame",
+                return_pose_adjustment=dict(offset_base_m=[.8, 0., -.2],
+                    camera_optical_frame="d555_color_optical_frame"),
                 assumptions=dict(
                     calibration_source="user_provided_scene_tf_yaml",
                     source_bundle="policy/demo_data/" + bundle.name,

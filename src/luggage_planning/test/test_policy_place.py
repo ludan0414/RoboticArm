@@ -5,6 +5,7 @@ import unittest
 
 from luggage_planning.policy_place import (
     build_place_segments, connect_place_from_pose, parse_place_target, run_place,
+    measured_grasp_transform, box_pose_from_grasp,
 )
 from luggage_planning.pose import Point, Pose, Quaternion, MotionSegment
 
@@ -87,6 +88,31 @@ class Ports:
 
 
 class PolicyPlaceTests(unittest.TestCase):
+    def test_actual_sealed_tool_rotation_preserves_target_box_axes(self):
+        detection, candidate = fixture()
+        box = Pose(Point(*detection.box_xyz), Quaternion())
+        sealed = Pose(Point(.04, .01, .4), Quaternion(1,0,0,0))
+        grasp = measured_grasp_transform(box, sealed)
+        goal = target(orientation_xyzw=[0,0,math.sqrt(.5),math.sqrt(.5)])
+        segments = build_place_segments(goal, detection, candidate, measured_grasp=grasp)
+        estimated = box_pose_from_grasp(segments[-2].target_pose, grasp)
+        for key in ('x','y','z'):
+            self.assertAlmostEqual(getattr(estimated.position,key),getattr(goal.box_pose.position,key))
+        dot = abs(sum(getattr(estimated.orientation,k)*getattr(goal.box_pose.orientation,k)
+                      for k in ('x','y','z','w')))
+        self.assertAlmostEqual(dot,1.)
+        # The nominal candidate can disagree with the actual pinned-J6 seal.
+        nominal = build_place_segments(goal, detection, candidate)
+        estimated_wrong = box_pose_from_grasp(nominal[-2].target_pose, grasp)
+        self.assertNotAlmostEqual(estimated_wrong.position.x, goal.box_pose.position.x)
+
+    def test_unaligned_final_pose_never_releases(self):
+        ports = Ports()
+        ports.validate_place_pose = lambda: (False, 'yaw 4deg')
+        code, reason = run_place(ports, build_place_segments(target(),*fixture()))
+        self.assertEqual(code,10)
+        self.assertIn('NOT_ALIGNED',reason)
+        self.assertNotIn('release',ports.calls)
     def test_rejects_ambiguous_or_invalid_input(self):
         for invalid in (
             dict(frame_id="container"), dict(pose_reference="tcp"),

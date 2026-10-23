@@ -38,12 +38,13 @@ class CarryConfig:
 
 
 class CarryEntry:
-    def __init__(self, config, detection, candidate):
+    def __init__(self, config, detection, candidate, measured_grasp=None):
         self.config = config
         self.size = _vector(detection.box_size, 3, 'measured box_size')
         if min(self.size) <= 0:
             raise ValueError('positive measured payload dimensions required')
-        self.offset, self.relative_q = grasp_transform(detection, candidate)
+        self.offset, self.relative_q = (measured_grasp if measured_grasp is not None
+                                       else grasp_transform(detection, candidate))
 
     def box_pose(self, tool):
         q = quat_mul(tool.orientation, quat_conjugate(self.relative_q))

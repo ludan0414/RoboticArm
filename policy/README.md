@@ -495,3 +495,8 @@ python prepare_greedy_demo.py --input demo_inputs/site_four_colors.json --output
 python run_four_box_demo.py --base demo_data/new_four_inside --bundle demo_data/new_four_ground --prepare-only
 python export_hardware_loading_profile.py --bundle demo_data/new_four_ground --output ../deployment_ws/config/loading_cycle.site.template.json --force
 ```
+
+导出的硬件 profile 另含 `return_pose_adjustment`：L2 将名义观察位按真实底座 TF
+平移 `[+0.8,0,-0.2]m`，再按工具到 D555 optical 的固定 TF 使相机朝底座 -X。
+该调整作用于真机初始化/复位/返回，不改写 Newton 原录制姿态；现场缺少 TF 或
+MoveIt 拒绝目标时不会执行。封吸实际 TF 和末端进场处理见部署侧 Pick 恢复说明。
