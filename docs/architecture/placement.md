@@ -24,8 +24,10 @@ Hard rules:
   physical hull/capacity geometry. The shared description doorway contract
   creates inflated front-frame collision prisms; real planning and Newton must
   apply them to the full robot/payload trajectory. Current site minimum is5cm.
-  Unknown/missing live guard geometry or payload collision permissions fail
-  closed. Final support/placement poses must not be silently shifted to satisfy
+  Unknown/missing live guard geometry or attached payload geometry fail closed.
+  Per operator instruction, the commissioning doorway gate does not read or
+  rewrite the ACM; it uses normal MoveIt trajectory collision checking.
+  Final support/placement poses must not be silently shifted to satisfy
   doorway clearance; replan the entry corridor or reject the slot.
 - Stacking on previously placed cargo is allowed only on **known** support.
   Unobserved columns may land on the a-priori floor (`peak ≈ floor_z`,

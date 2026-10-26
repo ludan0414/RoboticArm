@@ -83,11 +83,15 @@ class DoorwayMotionTests(unittest.TestCase):
         client.get_scene=lambda *args,**kwargs:self.scene
         return client
 
-    def test_guard_scene_is_read_back_and_payload_exemptions_are_forbidden(self):
+    def test_geometry_is_read_back_without_acm_queries_or_writes(self):
         client=self.scene_client()
+        requested=[]
+        client.set_acm_pairs=lambda *args,**kwargs:self.fail('doorway must not rewrite ACM')
+        client.get_scene=lambda components,**kwargs:(requested.append(components) or self.scene)
+        del self.scene.allowed_collision_matrix
         self.assertTrue(client.ensure_doorway_clearance(self.boxes,True,[.59,.37,.24])[0])
-        self.assertEqual(self.events[0],'apply')
-        self.assertFalse(self.events[1][2])
+        self.assertEqual(self.events,['apply'])
+        self.assertEqual(requested,[16|4])
 
     def test_apply_failure_stops_before_readback(self):
         client=self.scene_client()
@@ -103,26 +107,23 @@ class DoorwayMotionTests(unittest.TestCase):
         self.scene.world.collision_objects[0].primitives[0].dimensions=[.001]*3
         self.assertFalse(client.ensure_doorway_clearance(self.boxes)[0])
 
-    def test_missing_attached_payload_and_allowed_collision_are_rejected(self):
+    def test_missing_attached_payload_or_wrong_payload_dimensions_are_rejected(self):
         client=self.scene_client()
         self.scene.robot_state.attached_collision_objects=[]
         self.assertFalse(client.ensure_doorway_clearance(self.boxes,True,[.59,.37,.24])[0])
         client=self.scene_client()
-        self.scene.allowed_collision_matrix.entry_values[0].enabled[4]=True
-        self.assertFalse(client.ensure_doorway_clearance(self.boxes)[0])
+        self.scene.robot_state.attached_collision_objects[0].object.primitives[0].dimensions=[.1,.1,.1]
+        self.assertFalse(client.ensure_doorway_clearance(self.boxes,True,[.59,.37,.24])[0])
 
     def test_nonfinite_scene_geometry_is_rejected(self):
         client=self.scene_client()
         self.scene.world.collision_objects[0].primitives[0].dimensions[0]=float('nan')
         self.assertFalse(client.ensure_doorway_clearance(self.boxes)[0])
 
-    def test_missing_or_asymmetric_collision_matrix_is_rejected(self):
-        client=self.scene_client()
-        self.scene.allowed_collision_matrix.entry_names=[]
-        self.assertFalse(client.ensure_doorway_clearance(self.boxes)[0])
+    def test_empty_tool_does_not_gate_on_collision_permissions(self):
         client=self.scene_client()
         self.scene.allowed_collision_matrix.entry_values[4].enabled[0]=True
-        self.assertFalse(client.ensure_doorway_clearance(self.boxes)[0])
+        self.assertTrue(client.ensure_doorway_clearance(self.boxes)[0])
 
     def test_moveit_object_pose_representation_is_accepted(self):
         client=self.scene_client()
@@ -130,6 +131,25 @@ class DoorwayMotionTests(unittest.TestCase):
             obj.pose=obj.primitive_poses[0]
             obj.primitive_poses=[pose_message()]
         self.assertTrue(client.ensure_doorway_clearance(self.boxes)[0])
+
+    def test_empty_tool_does_not_require_pickup_box_in_acm(self):
+        client=self.scene_client()
+        self.scene.allowed_collision_matrix.entry_names=['elfin_base_link']
+        self.scene.allowed_collision_matrix.entry_values=[
+            SimpleNamespace(enabled=[False])]
+        ok,message=client.ensure_doorway_clearance(self.boxes)
+        self.assertTrue(ok,message)
+        self.assertEqual(self.events,['apply'])
+
+    def test_carrying_checks_payload_geometry_without_requiring_acm(self):
+        client=self.scene_client()
+        names=[box['id'] for box in self.boxes]
+        self.scene.allowed_collision_matrix.entry_names=names
+        self.scene.allowed_collision_matrix.entry_values=[
+            SimpleNamespace(enabled=[False]*len(names)) for _ in names]
+        ok,message=client.ensure_doorway_clearance(self.boxes,True,[.59,.37,.24])
+        self.assertTrue(ok,message)
+        self.assertEqual(self.events,['apply'])
 
 
 if __name__=='__main__':
