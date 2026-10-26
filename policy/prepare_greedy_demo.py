@@ -19,6 +19,7 @@ from demo_workspace import CertifiedWorkspace, explore_domain, recheck_domain
 from demo_greedy import greedy_sequence
 from demo_feeder import FEEDER_CENTER_M
 from online_packing_real import Hull
+from doorway_scene import clearance_hull,DoorwayGeometry
 from roboticarm_newton import DEFAULT_SOURCE, make_robot_urdf, scene_paths
 
 
@@ -32,6 +33,9 @@ def model_manifest(source_root, scene, top_heights=None, y_positions=None):
                 scene_sha256=digest(scene), meshes={str(p.relative_to(source_root)): digest(p) for p in sorted(paths)},
                 certificate_code_sha256=digest(Path(__file__).with_name("demo_workspace.py")),
                 collision_code_sha256=digest(Path(__file__).with_name("demo_collision.py")),
+                scene_builder_code_sha256=digest(Path(__file__).with_name('roboticarm_newton.py')),
+                doorway_contract_sha256=digest(Path(__file__).resolve().parents[1]/
+                    'src/luggage_description/luggage_description/doorway_clearance.py'),
                 source_root=str(source_root.resolve()))
     data["srdf_sha256"] = digest(Path(__file__).resolve().parents[1] / "src/luggage_description/config/S20_with_camera.srdf")
     if top_heights is not None:
@@ -50,10 +54,14 @@ def main():
     parser.add_argument("--domain-cache", type=Path, default=Path("demo_data/urdf_domain.json"))
     parser.add_argument("--domain-source", type=Path,
                         help="re-certify a pre-explored domain's stored joint witnesses")
+    parser.add_argument("--domain-seed", type=Path,
+                        help="untrusted old grid/joint seeds; every witness is rechecked in the NEW scene")
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--source-root", type=Path, default=DEFAULT_SOURCE)
     parser.add_argument("--scene-config", type=Path)
     args = parser.parse_args()
+    if args.domain_seed is not None and args.domain_source is not None:
+        parser.error('choose domain-source OR domain-seed')
     args.source_root = args.source_root.resolve()
     scene = args.scene_config or scene_paths(args.source_root)[1]
     scene = Path(scene).resolve()
@@ -74,27 +82,31 @@ def main():
         shutil.copyfile(scene, args.output / "scene_tf.yaml")
         top_heights = stack_contact_heights(manifest["boxes"])
         y_positions = domain_y_positions(manifest["boxes"])
-        if args.domain_source:
+        prior_domain=args.domain_source or args.domain_seed
+        if prior_domain:
             # Preserve the reviewed grid while adding actual supported heights
             # for the new luggage sizes. Greedy still checks physical support.
-            previous_grid = json.loads(args.domain_source.read_text(encoding="utf-8"))["grid"]
+            previous_grid = json.loads(prior_domain.read_text(encoding="utf-8"))["grid"]
             top_heights = sorted(set(top_heights) | set(previous_grid["top_height_m"]))
             y_positions = sorted(set(y_positions) | set(previous_grid["y_m"]))
         identity = model_manifest(args.source_root, scene, top_heights, y_positions)
         write_json(args.output / "model_manifest.json", identity)
-        hull = Hull.from_config(yaml.safe_load(scene.read_text(encoding="utf-8")))
+        scene_data=yaml.safe_load(scene.read_text(encoding='utf-8'))
+        physical_hull = Hull.from_config(scene_data)
+        hull = clearance_hull(physical_hull,scene_data)
         wp.set_device(args.device)
         stage = "EXPLORE_DOMAIN"
         print("当前阶段: 预先探索 URDF 可行域 (EXPLORE_DOMAIN)", flush=True)
         workspace = CertifiedWorkspace(args.source_root, scene, device=args.device,
                                        box_size=manifest["boxes"][0], trace=trace)
         cached = json.loads(args.domain_cache.read_text(encoding="utf-8")) if args.domain_cache.is_file() else None
-        if args.domain_source:
-            prior_identity = json.loads(args.domain_source.with_name("model_manifest.json").read_text(encoding="utf-8"))
-            for key in ("urdf_sha256", "scene_sha256", "meshes", "srdf_sha256"):
-                if prior_identity[key] != identity[key]:
-                    raise ValueError("pre-explored domain model mismatch: " + key)
-            domain = recheck_domain(workspace, hull, args.domain_source, args.output / "domain.json")
+        if prior_domain:
+            if args.domain_source:
+                prior_identity = json.loads(args.domain_source.with_name("model_manifest.json").read_text(encoding="utf-8"))
+                for key in ("urdf_sha256", "scene_sha256", "meshes", "srdf_sha256"):
+                    if prior_identity[key] != identity[key]:
+                        raise ValueError("pre-explored domain model mismatch: " + key)
+            domain = recheck_domain(workspace, hull, prior_domain, args.output / "domain.json")
             domain = explore_domain(workspace, hull, args.output / "domain.json",
                                     top_heights=top_heights, y_positions=y_positions, prior=domain)
             domain["model_identity"] = identity["identity"]
@@ -128,11 +140,14 @@ def main():
         plan = dict(schema_version=1, policy="greedy_back_to_front", seed=manifest.get("seed"),
                     feeder_center_container_door_floor_m=feeder,
                     position_frame="world", route_frame="container_door_floor", sequence=rows)
+        plan['doorway_clearance']=DoorwayGeometry.from_scene(scene_data).settings()
         write_json(args.output / "plan.json", plan)
         stage = "COMPILE_TRAJECTORY"
         print("当前阶段: 离线验算全部轨迹 (COMPILE_TRAJECTORY)，尚未创建可视化窗口", flush=True)
         from demo_trajectory import compile_trajectory
-        validation = compile_trajectory(args, manifest, hull, rows, workspace)
+        # Route aperture includes safety clearance; physical model/volume must
+        # retain the unmodified authoritative hull used by make_model.
+        validation = compile_trajectory(args, manifest, physical_hull, rows, workspace)
         write_json(args.output / "validation.json", validation)
         freeze_bundle(args.output)
         write_json(args.output / "prepare_result.json", dict(success=True, stage="READY_FOR_REPLAY",

@@ -14,6 +14,7 @@ from luggage_planning.pose import MotionSegment, Point, Pose, Quaternion
 def load_console():
     driver_module = ModuleType("hardware_pick_driver")
     class BaseDriver:
+        doorway_guard=SimpleNamespace(align_target=lambda target,*args:(target,{}))
         def _detection_view(self, box):
             return box.detection
         def attach_scene_box(self):
@@ -191,6 +192,7 @@ class AdapterTests(unittest.TestCase):
     def test_guard_checks_vias_before_endpoint_and_stops_on_blocked_via(self):
         driver=self.module.CommissioningDriver()
         driver.validate_scene_frame=lambda: None
+        driver.ensure_doorway_clearance=lambda:(True,'verified')
         driver.lookup_pose=lambda *args,**kwargs: Pose()
         seen=[]
         def check(actual,target,name):
@@ -207,6 +209,7 @@ class AdapterTests(unittest.TestCase):
         driver=self.module.CommissioningDriver()
         checked=[]
         driver.validate_scene_frame=lambda: checked.append('scene')
+        driver.ensure_doorway_clearance=lambda:(True,'verified')
         driver.lookup_pose=lambda *args,**kwargs: self.fail('no fake TCP target')
         self.assertTrue(driver.guard_segment(MotionSegment(type=HOME_SEGMENT_TYPE))[0])
         self.assertEqual(checked,['scene'])
@@ -274,7 +277,7 @@ class AdapterTests(unittest.TestCase):
             _args=SimpleNamespace(vacuum_state_max_age_sec=2.0),
             validate_scene_frame=lambda: None,
             _vacuum_state={"vacuum_on": False, "attached": False}, moves=[], closes=0,
-            report_stage=lambda _stage: None)
+            report_stage=lambda _stage: None,ensure_doorway_clearance=lambda:(True,'verified'))
         self.ports = self.module.HardwarePorts(self.driver, None, [], None, "test")
 
     def configure_reset(self):
@@ -337,6 +340,9 @@ class AdapterTests(unittest.TestCase):
 
     def test_successful_rpc_without_new_feedback_never_detaches_or_returns(self):
         self.configure_reset()
+        # Make the old sample explicitly older than the command even on
+        # Windows' coarser monotonic clock ticks.
+        self.driver._vacuum_received_at=time.monotonic()-.1
         self.driver._vacuum_state = dict(attached=False, vacuum_on=False)
         self.driver.vacuum = lambda enable: (True, "ok")
         with self.assertRaisesRegex(RuntimeError, "UNCONFIRMED"):
@@ -374,6 +380,15 @@ class AdapterTests(unittest.TestCase):
         self.ports.prepare_current()
         self.assertEqual(self.driver.moves, [])
         self.assertEqual(self.driver.closes, 1)
+
+    def test_missing_doorway_scene_blocks_before_any_motion_or_vacuum(self):
+        self.driver.wait_graph=lambda:(True,'ready')
+        self.driver._scene_client=lambda:SimpleNamespace(wait_ready=lambda **kwargs:True)
+        self.driver.ensure_doorway_clearance=lambda:(False,'DOORWAY_SCENE: missing left guard')
+        with self.assertRaisesRegex(RuntimeError,'DOORWAY_SCENE'):
+            self.ports.prepare_current()
+        self.assertEqual(self.driver.moves,[])
+        self.assertEqual(self.driver.closes,0)
 
     def test_held_unknown_or_enabled_vacuum_never_starts_return(self):
         for di0, state in [(1, {"vacuum_on": False}), (None, {}),

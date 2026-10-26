@@ -20,6 +20,13 @@ Hard rules:
   placement checks are invalid (same rule as the hull document).
 - Hull, overlap, and top-clearance gates run before ranking, retention,
   `top_n`, or first-feasible selection.
+- Commissioning doorway clearance is a transport constraint, independent of
+  physical hull/capacity geometry. The shared description doorway contract
+  creates inflated front-frame collision prisms; real planning and Newton must
+  apply them to the full robot/payload trajectory. Current site minimum is5cm.
+  Unknown/missing live guard geometry or payload collision permissions fail
+  closed. Final support/placement poses must not be silently shifted to satisfy
+  doorway clearance; replan the entry corridor or reject the slot.
 - Stacking on previously placed cargo is allowed only on **known** support.
   Unobserved columns may land on the a-priori floor (`peak ≈ floor_z`,
   `support_source=floor_prior`). Stacking on an unobserved surface

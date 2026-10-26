@@ -1,0 +1,72 @@
+{
+  "success": true,
+  "required_clearance_m": 0.05,
+  "boxes": [
+    {
+      "box": "B2",
+      "label": "black",
+      "crossing_frames": 83,
+      "worst": {
+        "frame": 316,
+        "stage": "CARRY",
+        "minimum_m": 0.10756977055757055,
+        "gaps_m": {
+          "left": 0.5472577272216499,
+          "right": 0.10756977055757055,
+          "top": 0.7020905015176746,
+          "bottom": 0.44666225911805935
+        }
+      }
+    },
+    {
+      "box": "B4",
+      "label": "red",
+      "crossing_frames": 122,
+      "worst": {
+        "frame": 1181,
+        "stage": "CARRY",
+        "minimum_m": 0.05599962154963556,
+        "gaps_m": {
+          "left": 0.05599962154963556,
+          "right": 0.9000000226391847,
+          "top": 0.8389995917074748,
+          "bottom": 0.3329998480192159
+        }
+      }
+    },
+    {
+      "box": "B1",
+      "label": "blue",
+      "crossing_frames": 94,
+      "worst": {
+        "frame": 1976,
+        "stage": "CARRY",
+        "minimum_m": 0.05599992513183438,
+        "gaps_m": {
+          "left": 0.05599992513183438,
+          "right": 0.9099997866170885,
+          "top": 0.8489991062898326,
+          "bottom": 0.3330004323475658
+        }
+      }
+    },
+    {
+      "box": "B3",
+      "label": "grey",
+      "crossing_frames": 39,
+      "worst": {
+        "frame": 2758,
+        "stage": "CARRY",
+        "minimum_m": 0.1679990097697014,
+        "gaps_m": {
+          "left": 0.6080007670872454,
+          "right": 0.1679990097697014,
+          "top": 0.8165918766386051,
+          "bottom": 0.5010016489372584
+        }
+      }
+    }
+  ],
+  "minimum_m": 0.05599962154963556,
+  "scope": "all recorded attached frames, full configured front slab; no continuous/hardware claim"
+}

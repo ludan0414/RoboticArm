@@ -7,6 +7,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 from demo_contract import check_bundle
 from export_hardware_loading_profile import export_profile, post_place_exit_indices, sample_poses
+from audit_doorway_clearance import audit
 
 
 class LoadingObservationTests(unittest.TestCase):
@@ -30,7 +31,7 @@ class LoadingObservationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.root = Path(__file__).parent
-        cls.bundle = cls.root / "demo_data/site_four_colors_right160_observe120"
+        cls.bundle = cls.root / "demo_data/site_four_colors_right160_clearance5"
         cls.plan = check_bundle(cls.bundle)
         cls.profile = json.loads((cls.root.parent / "deployment_ws/config/loading_cycle.site.template.json").read_text(encoding="utf-8"))
         cls.data = np.load(cls.bundle / "trajectory.npz")
@@ -73,6 +74,14 @@ class LoadingObservationTests(unittest.TestCase):
         keys = ["id", "label", "input_dims_m", "position_world_m", "orientation_world_xyzw"]
         self.assertEqual([[row[k] for k in keys] for row in self.plan["sequence"]],
                          [[row[k] for k in keys] for row in old["sequence"]])
+
+    def test_all_four_payloads_clear_the_complete_front_slab(self):
+        report = audit(self.bundle)
+        self.assertTrue(report['success'], report)
+        self.assertEqual(len(report['boxes']), 4)
+        self.assertGreaterEqual(report['required_clearance_m'], .05)
+        self.assertGreaterEqual(report['minimum_m'], .05 - 1e-6)
+        self.assertEqual(self.profile['doorway_clearance']['clearance_m'], .05)
 
 
 if __name__ == "__main__":

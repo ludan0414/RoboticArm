@@ -1,6 +1,7 @@
 # Newton 集装箱粗仿真
 
 当前四色四箱入口：`python run_four_box_demo.py`，详见本文末尾 Four-color luggage loading replay。
+当前默认记录为门框最小5cm净空的重新规划版本；旧记录保留作历史回放。
 真机默认 profile 对应四色四箱；下列单箱与十箱内容保留作历史回放。
 
 ## 历史单箱路线
@@ -473,8 +474,18 @@ The replay uses the prepared order, colors the boxes, and displays the physical
 color and dimensions beside Start Pick. Pickup remains at base (-1.6, 0), on
 the floor; the EEF waiting/observation point is independently set to base
 (-1.2, 0, 0), at base height. Empty return goes directly to this observation
-point. The default recording is `demo_data/site_four_colors_right160_observe120`;
-the older `site_four_colors_right160` recording retains its original waiting point.
+point. The default recording is `demo_data/site_four_colors_right160_clearance5`;
+its interior source is `demo_data/site_four_colors_inside_clearance5`.
+The new trajectory is replanned against four inflated front-frame collision
+guards (5cm required clearance,6mm target/numerical slack). All recorded attached
+frames are independently audited by `audit_doorway_clearance.py`.
+The regenerated ground recording contains3053frames, completes all4boxes,
+and has a minimum sampled front-slab gap of0.05599962m (red box, left frame).
+Its `clearance_audit.json` records all4results. Ground transit first aligns20cm
+outside the door at constant height, then enters along the checked Cartesian route.
+The previous `site_four_colors_right160_observe120` and inside_v3 recordings
+have no doorway margin and remain available as historical data.
+The older `site_four_colors_right160` recording retains its original waiting point.
 
 ```powershell
 conda activate newton-rope
@@ -488,10 +499,17 @@ connector from the prepared inside-cargo bundle before opening a window.
 opening a viewer. This is kinematic/collision validation, not a dynamics test
 or confirmation that a live MoveIt plan has succeeded.
 
+For changed geometry use `prepare_greedy_demo.py --domain-seed` with an old
+domain as untrusted starts and a NEW output/cache: every seed is checked again
+for FK error, limits and current-scene collision. `--domain-source` retains its
+strict same-model identity requirement. Physical hull/volume stays unchanged;
+only the routing aperture is narrowed. Legacy missing-margin bundles cannot
+be exported as the current hardware profile.
+
 To regenerate in new directories (existing recordings are never overwritten):
 
 ```powershell
-python prepare_greedy_demo.py --input demo_inputs/site_four_colors.json --output demo_data/new_four_inside --domain-source demo_data/site55_greedy10/domain.json --scene-config ../deployment_ws/config/scene_tf.loading_site.yaml
+python prepare_greedy_demo.py --input demo_inputs/site_four_colors.json --output demo_data/new_four_inside --domain-seed demo_data/site_four_colors_inside_v3/domain.json --domain-cache demo_data/new_clearance_domain.json --scene-config ../deployment_ws/config/scene_tf.loading_site.yaml
 python run_four_box_demo.py --base demo_data/new_four_inside --bundle demo_data/new_four_ground --prepare-only
 python export_hardware_loading_profile.py --bundle demo_data/new_four_ground --output ../deployment_ws/config/loading_cycle.site.template.json --force
 ```

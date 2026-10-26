@@ -21,6 +21,7 @@ Place support:
 from __future__ import division
 
 import threading
+import math
 import time
 
 from geometry_msgs.msg import Point as PointMsg
@@ -35,6 +36,8 @@ from moveit_msgs.msg import (
 )
 from moveit_msgs.srv import ApplyPlanningScene, GetPlanningScene
 from shape_msgs.msg import Mesh, MeshTriangle, SolidPrimitive
+from .pose import Quaternion
+from .suction_candidate_waypoints import quat_mul,quat_rotate
 
 BOX_OBJECT_ID = "pickup_box"
 DEFAULT_ATTACH_LINK = "suction_contact_frame"
@@ -425,6 +428,73 @@ class PlanningSceneClient(object):
         scene.world.collision_objects = [
             build_remove_object(str(obj_id)) for obj_id in obj_ids]
         return self._apply(scene, timeout=timeout)
+
+    def ensure_doorway_clearance(self, boxes, require_payload=False, payload_size=None, timeout=5.0):
+        """Apply/read back the guard geometry and forbid payload exemptions.
+
+        A missing guard, missing carried box, stale object or allowed collision
+        is a planning failure; do not dispatch a motion on partial scene setup.
+        """
+        boxes=list(boxes)
+        if len(boxes)!=4:
+            return False,'DOORWAY_SCENE: four frame guards required'
+        ok,message=self.add_collision_boxes(boxes,frame_id='world',timeout=timeout)
+        if not ok:
+            return False,'DOORWAY_SCENE: '+message
+        pairs=[(box['id'],BOX_OBJECT_ID) for box in boxes]
+        ok,message=self.set_acm_pairs(pairs,False,verify=False,timeout=timeout)
+        if not ok:
+            return False,'DOORWAY_ACM: '+message
+        scene=self.get_scene(PlanningSceneComponents.WORLD_OBJECT_GEOMETRY |
+                             PlanningSceneComponents.ROBOT_STATE_ATTACHED_OBJECTS |
+                             PlanningSceneComponents.ALLOWED_COLLISION_MATRIX,timeout=timeout)
+        if scene is None:
+            return False,'DOORWAY_SCENE: readback unavailable'
+        matrix=scene.allowed_collision_matrix
+        names=list(matrix.entry_names)
+        required=[box['id'] for box in boxes]+[BOX_OBJECT_ID]
+        if (any(name not in names for name in required) or len(set(names))!=len(names)
+                or len(matrix.entry_values)!=len(names)
+                or any(len(row.enabled)!=len(names) for row in matrix.entry_values)):
+            return False,'DOORWAY_ACM: explicit collision permissions not confirmed'
+        objects={obj.id:obj for obj in scene.world.collision_objects}
+        for expected in boxes:
+            obj=objects.get(expected['id'])
+            if (obj is None or obj.header.frame_id.lstrip('/')!='world' or len(obj.primitives)!=1
+                    or len(obj.primitive_poses)!=1 or obj.primitives[0].type!=SolidPrimitive.BOX):
+                return False,'DOORWAY_SCENE: missing/invalid '+expected['id']
+            dimensions=list(obj.primitives[0].dimensions)
+            if (len(dimensions)!=3 or not all(math.isfinite(v) and v>0 for v in dimensions)
+                    or max(abs(a-b) for a,b in zip(dimensions,expected['size']))>1e-6):
+                return False,'DOORWAY_SCENE: size mismatch '+expected['id']
+            origin,orientation=_xyz_quat_from_pose(getattr(obj,'pose',None))
+            if max(abs(v) for v in orientation)<1e-12 and max(abs(v) for v in origin)<1e-12:
+                orientation=[0.,0.,0.,1.]
+            position,quat=_xyz_quat_from_pose(obj.primitive_poses[0])
+            q=Quaternion(*orientation)
+            offset=quat_rotate(q,position)
+            position=[a+b for a,b in zip(origin,offset)]
+            actual=quat_mul(q,Quaternion(*quat))
+            values=[actual.x,actual.y,actual.z,actual.w]
+            if (not all(math.isfinite(v) for v in position+values)
+                    or abs(sum(v*v for v in values)-1)>1e-6
+                    or max(abs(a-b) for a,b in zip(position,expected['xyz']))>1e-5
+                    or abs(abs(sum(a*b for a,b in zip(values,expected['quat'])))-1)>1e-6):
+                return False,'DOORWAY_SCENE: pose mismatch '+expected['id']
+            if (acm_pair_allowed(matrix,expected['id'],BOX_OBJECT_ID)
+                    or acm_pair_allowed(matrix,BOX_OBJECT_ID,expected['id'])):
+                return False,'DOORWAY_ACM: payload exemption remains'
+        if require_payload:
+            attached=[a for a in scene.robot_state.attached_collision_objects if a.object.id==BOX_OBJECT_ID]
+            if len(attached)!=1 or attached[0].link_name!=DEFAULT_ATTACH_LINK:
+                return False,'DOORWAY_PAYLOAD: attached pickup box not confirmed'
+            primitives=attached[0].object.primitives
+            if (len(primitives)!=1 or primitives[0].type!=SolidPrimitive.BOX or payload_size is None
+                    or len(primitives[0].dimensions)!=3 or len(payload_size)!=3
+                    or not all(math.isfinite(v) and v>0 for v in [*primitives[0].dimensions,*payload_size])
+                    or max(abs(a-b) for a,b in zip(primitives[0].dimensions,payload_size))>1e-6):
+                return False,'DOORWAY_PAYLOAD: attached box dimensions mismatch'
+        return True,'doorway guards and payload collision permissions verified'
 
     def add_collision_mesh(self, obj_id, xyz, quat, mesh_msg,
                            frame_id="world", timeout=30.0):

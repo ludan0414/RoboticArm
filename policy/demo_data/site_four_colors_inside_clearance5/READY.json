@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "ready": true,
+  "files": {
+    "input.json": "18f0e6ee2a3255d6eade3a81735cefe34d57444547a40fd2e81a533eedd24cfc",
+    "domain.json": "e527a24646de62579ed2aa8ce0469af6676ea13527e6591884a41008c58bb049",
+    "plan.json": "1124429f914ccdaefc77b97895ed3eaa2fd39efc4ef0928ce97b7644c8dfc133",
+    "trajectory.npz": "d2b9396eb2f81e844944526fed7ca138272f7fb97b8fec783b508528c6e21843",
+    "scene_tf.yaml": "dd0ca484c767734411a9abd6dc19c7900607c9cf04689b1c3d9292c5ec551f25",
+    "validation.json": "9ad6109140655c72abed1f93dd6e3cc2b3d4ad39e42ac4d59ad2d3204fe15443",
+    "model_manifest.json": "2ddf301f9be1822cbc139d18fb21a395e40a68f528178ff72cfa435fe7f845d7"
+  }
+}

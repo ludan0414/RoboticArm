@@ -13,6 +13,7 @@ import yaml
 from scipy.spatial.transform import Rotation
 from demo_contract import check_bundle
 from demo_pose_sampling import sample_pose_indices
+from doorway_scene import DoorwayGeometry
 
 
 def pose_dict(pose):
@@ -58,6 +59,8 @@ def export_profile(bundle):
     if plan.get("ground_carry_clearance", {}).get("pedestal_margin_m") != .05:
         raise ValueError("reviewed high-clearance route required")
     scene = yaml.safe_load((bundle / "scene_tf.yaml").read_text(encoding="utf-8"))
+    doorway=DoorwayGeometry.from_scene(scene)
+    DoorwayGeometry.from_settings(doorway.settings(),require_site_margin=True)
     pedestal = scene["pedestal"]
     base_rotation = (Rotation.from_euler("xyz", pedestal["rotation_rpy"])
                      * Rotation.from_euler("xyz", scene["robot"]["rotation_rpy"]))
@@ -115,6 +118,7 @@ def export_profile(bundle):
                     max_segment_rotation_rad=float(np.pi / 2),
                     enforce_segment_heuristics=False,
                     axis_test_step_m=.02),
+                doorway_clearance=doorway.settings(),
                 carry_entry=dict(strategy="outside_retract_high_lift_v1",
                     pedestal_center_world_pose=pose_dict(np.r_[
                         np.asarray(pedestal["translation"]) + [0, 0, pedestal["size"][2]/2],
@@ -128,7 +132,7 @@ def export_profile(bundle):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bundle", type=Path,
-                        default=Path(__file__).parent / "demo_data/site_four_colors_right160_observe120")
+                        default=Path(__file__).parent / "demo_data/site_four_colors_right160_clearance5")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()

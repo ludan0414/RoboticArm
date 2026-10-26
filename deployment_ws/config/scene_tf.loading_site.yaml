@@ -22,6 +22,8 @@ container:
     chamfer: {side: positive_y, floor_y: 0.55, wall_z: 0.9}
   opening:
     side: negative_x
+    # Entire oriented payload/robot trajectory, not just the TCP centre.
+    clearance_m: 0.05
     width: 1.33
     height: 1.41
     aperture:

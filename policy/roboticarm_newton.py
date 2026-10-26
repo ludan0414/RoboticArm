@@ -239,6 +239,14 @@ def add_cell_scene(builder, source_root: Path, *, show_robot: bool = True,
     # Full MoveIt collision STL, rather than the decimated Gazebo physics STL.
     builder.add_shape_mesh(-1, xform=c_xform, mesh=load_mesh(container_dir / "container_collision.stl"), cfg=collision_cfg, label="container_collision_full")
     builder.add_shape_mesh(-1, xform=c_xform, mesh=load_mesh(container_dir / "container_visual.stl"), cfg=visual_cfg, color=wp.vec3(0.35, 0.45, 0.55), label="container_visual")
+    if float(config['container'].get('opening',{}).get('clearance_m',0.0))!=0:
+        from doorway_scene import DoorwayGeometry
+        doorway=DoorwayGeometry.from_scene(config)
+        for guard in doorway.world_guard_boxes(container_pose['translation'],
+                rotation(container_pose).as_quat().tolist(),collision_tolerance_m=.001):
+            builder.add_shape_box(-1,xform=wp.transform(wp.vec3(*guard['xyz']),wp.quat(*guard['quat'])),
+                hx=guard['size'][0]/2,hy=guard['size'][1]/2,hz=guard['size'][2]/2,
+                cfg=collision_cfg,label=guard['id'])
 
     robot_urdf = make_robot_urdf(source, models, box_size=box_size)
     if not show_robot:

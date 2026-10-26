@@ -24,6 +24,7 @@ from luggage_planning.release_confirmation import wait_for_release
 from luggage_planning.commissioning_home import HOME_JOINTS_DEG, HOME_SEGMENT_TYPE
 from luggage_planning.placement_approach import lower_final_approach
 from luggage_planning.placement_payload import release_above_support
+from luggage_planning.doorway_motion import DoorwayMotionGuard
 from luggage_planning.pick_return_path import PickReturnPath
 from luggage_planning.hardware_motion_guard import (HardwareMotionGuard, axis_test_segments,
                                                     quaternion_angle)
@@ -324,7 +325,11 @@ class CommissioningDriver(HardwarePickDriver):
             self.get_logger().info('placement payload height: configured=%s reference=%s target=%s' % (
                 detection.box_size, target.reference_box_size_m, vars(target.box_pose.position)))
             target = lower_final_approach(target)
+            target,doorway_report=self.doorway_guard.align_target(target,detection.box_size,
+                self.lookup_pose('world','container_link'))
+            self.get_logger().info('doorway clearance: '+json.dumps(doorway_report))
             segments = build_place_segments(target, detection, candidate, measured_grasp=grasp)
+            self._doorway_carrying=True
         config = getattr(self, "carry_entry_config", None)
         if config is not None:
             from luggage_planning.carry_entry import CarryEntry
@@ -340,6 +345,9 @@ class CommissioningDriver(HardwarePickDriver):
 
     def guard_segment(self, segment):
         self.validate_scene_frame()
+        ok,message=self.ensure_doorway_clearance()
+        if not ok:
+            return ok,message
         if segment.type == HOME_SEGMENT_TYPE:
             return True, 'fixed joint home: MoveIt validates joint-space path'
         actual = self.lookup_pose("world", "suction_contact_frame", fresh=True)
@@ -356,6 +364,13 @@ class CommissioningDriver(HardwarePickDriver):
                     return ok, message
             actual = target
         return True, 'all route intervals checked'
+
+    def ensure_doorway_clearance(self):
+        guards=self.doorway_guard.collision_boxes(self.lookup_pose('world','container_link'))
+        geometry=getattr(self,'_scene_box',None)
+        carrying=bool(getattr(self,'_doorway_carrying',False) and geometry is not None)
+        return self._scene_client().ensure_doorway_clearance(guards,require_payload=carrying,
+            payload_size=geometry[2] if carrying else None)
 
     def remove_scene_box(self):
         geometry = self._scene_box
@@ -502,6 +517,9 @@ class HardwarePorts:
         scene = self.driver._scene_client()
         if not scene.wait_ready(timeout_sec=5.0):
             raise RuntimeError("planning scene unavailable")
+        ok,message=self.driver.ensure_doorway_clearance()
+        if not ok:
+            raise RuntimeError(message)
         self.execute([])
 
     def pick_place(self, index):
@@ -515,6 +533,7 @@ class HardwarePorts:
         if hasattr(self.driver, '_effective_place_target'):
             del self.driver._effective_place_target
         self.driver._measured_grasp = None
+        self.driver._doorway_carrying=False
         self.driver.placed_proxy_id = "expected_placed_%s_%d" % (self.session, index)
         # Separate trace per absolute box number; retries overwrite that box's trace.
         self.driver._args.trace_out = "%s.box%03d.jsonl" % (self.journal.name, index + 1)
@@ -551,6 +570,7 @@ def main(argv=None):
     if not 1 <= cli.start_box <= len(cycles):
         parser.error('--start-box must be between 1 and %d' % len(cycles))
     motion_guard = HardwareMotionGuard(json.loads(raw_profile))
+    doorway_guard = DoorwayMotionGuard(json.loads(raw_profile))
     from luggage_planning.carry_entry import CarryConfig
     entry_settings = json.loads(raw_profile).get("carry_entry")
     carry_config = CarryConfig(entry_settings) if entry_settings is not None else None
@@ -567,6 +587,7 @@ def main(argv=None):
     driver.tf_buffer = Buffer()
     driver.tf_listener = TransformListener(driver.tf_buffer, driver)
     driver.motion_guard = motion_guard
+    driver.doorway_guard = doorway_guard
     driver.carry_entry_config = carry_config
     driver.segment_guard = driver.guard_segment
     driver.detection_guard = driver.guard_detection

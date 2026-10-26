@@ -23,6 +23,21 @@ from ground_carry_clearance import (pedestal_geometry, box_bottom, box_pedestal_
 from verify_pick_place_run import verify
 
 
+def portal_staging_point(dock_tool_xyz,container,distance_m=.20):
+    """Align outside the door before entering its narrow clearance corridor.
+
+    The extra20cm is a transit standoff, not a reduced/alternative door margin.
+    Keep world height fixed so lateral transfer retains pedestal clearance.
+    """
+    direction=Rotation.from_euler('xyz',container['rotation_rpy']).apply([-1.,0.,0.])
+    horizontal=float(np.linalg.norm(direction[:2]))
+    if horizontal<.5 or not np.isfinite(distance_m) or distance_m<=0:
+        raise ValueError('invalid doorway transit staging geometry')
+    point=np.asarray(dock_tool_xyz,dtype=float).copy()
+    point[:2]+=direction[:2]/horizontal*distance_m
+    return point
+
+
 class BridgeCompiler(MotionCompiler):
     checking = False
     validate_motion = True
@@ -107,10 +122,44 @@ class BridgeCompiler(MotionCompiler):
     def joint_path(self, start, goal, label):
         if self.stage != label:
             self.enter(label)
-        path = ([np.asarray(start), np.asarray(goal)] if not self.validate_motion else
-                plan_joint_approach(start, goal, self.model.joint_limit_lower.numpy()[:6],
-                                  self.model.joint_limit_upper.numpy()[:6], self.valid,
-                                  resolution=.035, max_seconds=60))
+        attempt=getattr(self,'joint_path_attempt',0)
+        self.joint_path_attempt=attempt+1
+        boundary=dict(box_id=self.box_id,stage=label,start=np.asarray(start).tolist(),goal=np.asarray(goal).tolist(),
+            dimensions=list(self.current_box_size),attached=bool(self.attached),
+            high_carry=bool(self.high_carry),high_carry_bottom_z=float(self.high_carry_bottom_z),
+            grasp_xyz=np.asarray(self.grasp_xyz).tolist(),grasp_quat=self.grasp_rotation.as_quat().tolist(),
+            placed={key:value.tolist() for key,value in self.placed.items()},valid_calls=0,rejected=0,rejection_samples=[])
+        capture=self.output/f'joint_path_{attempt:03d}.json'
+        write_json(capture,boundary)
+
+        def checked(q):
+            ok=self.valid(q)
+            boundary['valid_calls']+=1
+            if not ok:
+                boundary['rejected']+=1
+                if len(boundary['rejection_samples'])<12:
+                    if np.isfinite(q).all():
+                        self.refresh(q)
+                    boundary['rejection_samples'].append(dict(q=np.asarray(q).tolist(),
+                        robot=self.ik.last_collision_pairs,payload=self.payload_contact_failures()))
+            if boundary['valid_calls']%100==0:
+                write_json(capture,boundary)
+            return ok
+
+        try:
+            path = ([np.asarray(start), np.asarray(goal)] if not self.validate_motion else
+                    plan_joint_approach(start, goal, self.model.joint_limit_lower.numpy()[:6],
+                                      self.model.joint_limit_upper.numpy()[:6], checked,
+                                      resolution=.035, max_seconds=60))
+            boundary['success']=True
+            boundary['path']=[q.tolist() for q in path]
+            write_json(capture,boundary)
+        except BaseException as exc:
+            boundary.update(success=False,error=str(exc))
+            write_json(capture,boundary)
+            self.q=np.asarray(start).copy()
+            self.refresh(self.q)
+            raise
         self.q = np.asarray(start).copy()
         for first, last in zip(path, path[1:]):
             count = max(12, int(np.ceil(np.max(np.abs(last-first))/.018)))
@@ -263,7 +312,18 @@ def prepare_bridge(base_folder, output, feeder_xy, *, validate=True, observe_at_
                                    - box_bottom(dock_box, run.current_box_size))
                 high_dock_q = run.solve(high_dock, yaw)
                 run.high_carry = True
-                connector = run.joint_path(run.q.copy(), high_dock_q, "CARRY")
+                portal_alignment=None
+                if float(scene_config['container']['opening'].get('clearance_m',0))>0:
+                    outside_dock=portal_staging_point(high_dock,run.container)
+                    outside_q=run.solve(outside_dock,yaw)
+                    connector=run.joint_path(run.q.copy(),outside_q,'CARRY')
+                    alignment_start=len(run.history)
+                    run.move(high_dock,yaw)
+                    portal_alignment=dict(outside_tool_world_m=outside_dock.tolist(),
+                        dock_tool_world_m=high_dock.tolist(),
+                        recorded_joints=[frame[0].tolist() for frame in run.history[alignment_start:]])
+                else:
+                    connector = run.joint_path(run.q.copy(), high_dock_q, "CARRY")
                 run.high_carry = False
                 run.move(dock_tool[:3], yaw)
                 docking = run.joint_path(run.q.copy(), dock_q, "CARRY")
@@ -290,6 +350,8 @@ def prepare_bridge(base_folder, output, feeder_xy, *, validate=True, observe_at_
                 bridges.append(dict(id=row["id"], carry_joint_path=connector,
                     docking_joint_path=docking,
                     empty_return_joint_path=empty_return, original_frame_range=[start,end]))
+                if portal_alignment is not None:
+                    bridges[-1]['portal_alignment']=portal_alignment
                 bridges[-1]["reused_output_frame_range"] = [first_output_frame, first_output_frame+end-start]
                 write_json(output/"bridges.json", bridges)
                 write_json(output/"plan.json", plan)

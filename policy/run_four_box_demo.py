@@ -12,8 +12,8 @@ from replay_prepared_demo import replay
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     root = Path(__file__).parent / "demo_data"
-    parser.add_argument("--base", type=Path, default=root / "site_four_colors_inside_v3")
-    parser.add_argument("--bundle", type=Path, default=root / "site_four_colors_right160_observe120")
+    parser.add_argument("--base", type=Path, default=root / "site_four_colors_inside_clearance5")
+    parser.add_argument("--bundle", type=Path, default=root / "site_four_colors_right160_clearance5")
     parser.add_argument("--prepare-only", action="store_true")
     parser.add_argument("--auto", action="store_true")
     args = parser.parse_args()
