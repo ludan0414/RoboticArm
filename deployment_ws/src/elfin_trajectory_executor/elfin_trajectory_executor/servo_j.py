@@ -210,7 +210,39 @@ def limit_servo_braking(
         speed = _span_deg(out[-2], out[-1]) / dt_s
     if out[-1] != pts[-1]:
         out.append(list(pts[-1]))
-    return out
+    return _enforce_joint_acceleration(out, dt_s, max_decel_deg)
+
+
+def _enforce_joint_acceleration(points, dt_s, limit_deg):
+    """Check all signed joint changes, including path corners and endpoint hold.
+
+    The scalar arc limiter above cannot by itself bound changes in tangent at
+    corners. Time dilation preserves the sampled polyline and endpoints; no
+    unchecked geometric corner rounding is introduced. Fail before streaming if
+    a bounded fixed-grid path cannot be produced.
+    """
+    result = points
+    for _ in range(20):
+        if _braking_ok(result, dt_s, limit_deg):
+            return result
+        velocities = [[0.] * 6] + [
+            [(b[j] - a[j]) / dt_s for j in range(6)]
+            for a, b in zip(result, result[1:])] + [[0.] * 6]
+        peak = max(abs(b[j]-a[j]) / dt_s
+                   for a, b in zip(velocities, velocities[1:]) for j in range(6))
+        stretch = max(1.1, math.sqrt(peak / limit_deg) * 1.05)
+        count = int(math.ceil((len(result)-1) * stretch))
+        if count > 100000:
+            raise ValueError('ServoJ acceleration-limited path exceeds sample budget')
+        previous = result
+        result = []
+        for index in range(count + 1):
+            position = index * (len(previous)-1) / count
+            lo = min(int(position), len(previous)-2)
+            fraction = position - lo
+            result.append([a + fraction*(b-a) for a, b in zip(previous[lo], previous[lo+1])])
+        result[0], result[-1] = list(previous[0]), list(previous[-1])
+    raise ValueError('ServoJ joint acceleration remains above cap; refusing stream')
 
 
 def servo_j_hold_count(lookahead_time: float, servo_time: float) -> int:

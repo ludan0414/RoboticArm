@@ -27,6 +27,8 @@ from luggage_planning.placement_payload import release_above_support
 from luggage_planning.cuboid_heading import nearest_cuboid_heading
 from luggage_planning.doorway_motion import DoorwayMotionGuard
 from luggage_planning.pick_return_path import PickReturnPath
+from luggage_planning.continuous_motion import continuous_carry
+from luggage_planning.loading_speed import LoadingSpeed
 from luggage_planning.hardware_motion_guard import (HardwareMotionGuard, axis_test_segments,
                                                     quaternion_angle)
 from luggage_planning.pose import Point, Pose, Quaternion
@@ -138,13 +140,18 @@ pre{white-space:pre-wrap;font-size:13px}
 <p id="reset-target"></p>
 <p>掉箱复位会停止机械臂、关闭吸盘，允许当前箱子掉落，确认松吸后再规划回位。请确认掉落区域和回位路径。掉落箱体位置未测量；复位不清除舱内占位，也不猜测本箱放置成功。</p>
 <h2 id="next-box"></h2>
+<p><label>运动速度：<input id="speed" type="range" min="10" max="100" step="5" value="100"> <output id="speed-label">100%</output></label>
+<button id="apply-speed" disabled>应用速度</button> <span id="speed-applied">尚未设置</span></p>
+<p>10–100% 为当前规划速度的倍率，100% 仍受原有限速和加减速保护。停稳后可调，下一次动作生效，不改变正在执行的轨迹。</p>
 <p id="page-error"></p>
 <p>故障后锁定，不自动松吸或重试。此网页不提供急停，请使用现场实体急停。</p>
 <details><summary>原始 JSON</summary><pre id="status"></pre></details>
 <script>
 let current=null, pending=false;
+const speedInput=document.getElementById('speed'), speedButton=document.getElementById('apply-speed');
+speedInput.oninput=()=>{document.getElementById('speed-label').textContent=speedInput.value+'%';};
 const ack=document.getElementById('ack'), a=document.getElementById('start'), s=document.getElementById('skip'), b=document.getElementById('pick'), t=document.getElementById('axes'), r=document.getElementById('reset'), restore=document.getElementById('recover');
-function enable(){a.disabled=s.disabled=pending||!ack.checked||current?.state!=='WAIT_START'||current?.return_pending;b.disabled=pending||!ack.checked||current?.state!=='WAIT_PICKUP_READY'||current?.return_pending;t.disabled=pending||!ack.checked||current?.return_pending||!['WAIT_START','WAIT_PICKUP_READY'].includes(current?.state);r.disabled=restore.disabled=pending||!ack.checked||!['WAIT_START','WAIT_PICKUP_READY','FAULT'].includes(current?.state);}
+function enable(){a.disabled=s.disabled=pending||!ack.checked||current?.state!=='WAIT_START'||current?.return_pending;b.disabled=pending||!ack.checked||current?.state!=='WAIT_PICKUP_READY'||current?.return_pending;t.disabled=pending||!ack.checked||current?.return_pending||!['WAIT_START','WAIT_PICKUP_READY'].includes(current?.state);r.disabled=restore.disabled=pending||!ack.checked||!['WAIT_START','WAIT_PICKUP_READY','FAULT'].includes(current?.state);speedInput.disabled=speedButton.disabled=pending||!['WAIT_START','WAIT_PICKUP_READY','FAULT'].includes(current?.state);}
 function txt(id,v){document.getElementById(id).textContent=v==null||v===''?'—':String(v);}
 function paint(id,sev){document.getElementById(id).className='card '+(sev||'unknown');}
 function ago(mono,now){if(!mono)return '—';const d=now-mono;if(d<0)return '0.0s';return d.toFixed(1)+'s 前';}
@@ -154,6 +161,7 @@ function render(){
   const vac=current.vacuum||{};
   const now=hw.monotonic_sec||0;
   txt('next-box',current.next_box_prompt);
+  txt('speed-applied',current.speed?.percent==null?'尚未确认速度设置':'已应用 '+current.speed.percent+'%');
   const target=current.reset_target||{};
   txt('reset-target','固定归位 J1～J6 (°)：'+(target.joints_deg||[]).map(v=>Number(v).toFixed(3)).join(', '));
   const recovery=hw.recovery||{};
@@ -196,8 +204,9 @@ function render(){
   document.getElementById('event-log').innerHTML=rows.length?rows.map(e=>'<tr class="'+ (e.severity||'')+'"><td>'+ago(e.monotonic_sec,now)+'</td><td>'+ (e.name||'')+'</td><td>'+ (e.code==null?'':e.code)+'</td><td>'+ (e.hint||e.message||'')+(e.index==null?'':' #'+e.index)+'</td></tr>').join(''):'<tr><td colspan="4">尚无 Init/Start/40071/40025 记录</td></tr>';
   document.getElementById('status').textContent=JSON.stringify(current,null,2);
 }
-async function refresh(){try{current=await(await fetch('/status')).json();render();enable();}catch(e){a.disabled=s.disabled=b.disabled=t.disabled=r.disabled=restore.disabled=true;}}
-async function send(command){pending=true;enable();try{const r=await fetch('/command',{method:'POST',headers:{'Content-Type':'application/json','X-Console-Token':'TOKEN'},body:JSON.stringify({command,request_id:current.request_id,schema_version:1,scene_confirmed:ack.checked})});if(!r.ok)throw Error(await r.text());ack.checked=false;document.getElementById('page-error').textContent='';}catch(e){document.getElementById('page-error').textContent=e.message;}finally{pending=false;await refresh();}}
+async function refresh(){try{current=await(await fetch('/status')).json();render();enable();}catch(e){a.disabled=s.disabled=b.disabled=t.disabled=r.disabled=restore.disabled=speedInput.disabled=speedButton.disabled=true;}}
+async function send(command){pending=true;enable();try{const r=await fetch('/command',{method:'POST',headers:{'Content-Type':'application/json','X-Console-Token':'TOKEN'},body:JSON.stringify({command,percent:Number(speedInput.value),request_id:current.request_id,schema_version:1,scene_confirmed:ack.checked})});if(!r.ok)throw Error(await r.text());if(command!=='set_speed')ack.checked=false;document.getElementById('page-error').textContent='';}catch(e){document.getElementById('page-error').textContent=e.message;}finally{pending=false;await refresh();}}
+speedButton.onclick=()=>send('set_speed');
 a.onclick=()=>send('initialize');s.onclick=()=>send('skip_initialize');b.onclick=()=>send('pick');t.onclick=()=>send('axis_test');r.onclick=()=>send('reset');restore.onclick=()=>send('recover');ack.onchange=enable;setInterval(refresh,400);refresh();
 </script>"""
 
@@ -343,9 +352,48 @@ class CommissioningDriver(HardwarePickDriver):
             segments = self._carry_entry.connect(actual, segments)
         else:
             segments = connect_place_from_pose(actual, segments)
-        # Restore the original per-waypoint settle boundaries. Merging into
-        # eight longer actions caused controller errors in the site trial.
-        return segments
+        return continuous_carry(segments)
+
+    def set_motion_speed(self, scale):
+        """Set/read planning tempo so MoveIt sees the actual slowed duration."""
+        from rcl_interfaces.srv import SetParametersAtomically, GetParameters
+        from rcl_interfaces.msg import Parameter, ParameterValue, ParameterType
+
+        def call(service, suffix, request):
+            client = self.create_client(service, '/motion_planner/' + suffix)
+            try:
+                if not client.wait_for_service(timeout_sec=2.0):
+                    raise ValueError('motion planner speed service unavailable')
+                future = client.call_async(request)
+                done = threading.Event()
+                future.add_done_callback(lambda _: done.set())
+                if not done.wait(3.0):
+                    raise ValueError('motion planner speed service timeout; value unconfirmed')
+                try:
+                    return future.result()
+                except Exception as exc:
+                    raise ValueError('motion planner speed service failed: '+str(exc)) from exc
+            finally:
+                self.destroy_client(client)
+
+        request = SetParametersAtomically.Request()
+        request.parameters = [Parameter(name='speed_scale', value=ParameterValue(
+            type=ParameterType.PARAMETER_DOUBLE, double_value=scale))]
+        response = call(SetParametersAtomically, 'set_parameters_atomically', request)
+        if response is None or not response.result.successful:
+            raise ValueError('motion planner refused speed: ' + (response.result.reason if response else 'no response'))
+        query = GetParameters.Request()
+        query.names = ['speed_scale']
+        response = call(GetParameters, 'get_parameters', query)
+        if (response is None or len(response.values) != 1
+                or response.values[0].type != ParameterType.PARAMETER_DOUBLE):
+            raise ValueError('motion planner speed readback unavailable')
+        actual = response.values[0].double_value
+        if math.isfinite(actual) and .1 <= actual <= 1.:
+            if not hasattr(self, '_base_plan_timeout'):
+                self._base_plan_timeout = self._args.plan_timeout
+            self._args.plan_timeout = self._base_plan_timeout / actual
+        return actual
 
     def guard_segment(self, segment):
         self.validate_scene_frame()
@@ -501,7 +549,8 @@ class HardwarePorts:
         path = getattr(self.driver, '_pick_return_path', None)
         if path is not None and path.poses:
             while path.poses:
-                segment = path.next_segment()
+                count = len(path.poses)
+                segment = path.continuous_segment()
                 lookup = getattr(self.driver, 'lookup_pose', None)
                 actual = lookup('world', 'suction_contact_frame', fresh=True) if lookup else None
                 at_target = (actual is not None and math.dist(
@@ -510,7 +559,7 @@ class HardwarePorts:
                     and quaternion_angle(actual.orientation, segment.target_pose.orientation) <= math.radians(1))
                 if segment.waypoints or not at_target:
                     self.execute([segment])
-                path.settled()
+                path.settled(count)
 
     def prepare_current(self):
         """Readiness checks only: no observe move, detection or vacuum command."""
@@ -599,6 +648,7 @@ def main(argv=None):
     ports.record(dict(event="session", profile_sha256=hashlib.sha256(raw_profile).hexdigest(),
                       profile=json.loads(raw_profile), session=session, start_box=cli.start_box))
     cycle = LoadingCycle(ports, len(cycles), start_box=cli.start_box)
+    speed = LoadingSpeed(cycle, driver.set_motion_speed)
     driver.stage_callback = cycle.stage_changed
     driver._console_hardware = {"available": False}
     driver._console_event = {}
@@ -646,6 +696,7 @@ def main(argv=None):
                 self.reply(200, PAGE.replace("TOKEN", token), "text/html")
             elif self.path == "/status":
                 snapshot = cycle.snapshot()
+                snapshot['speed'] = speed.snapshot()
                 snapshot["reset_target"] = dict(type=HOME_SEGMENT_TYPE,
                                                 joints_deg=HOME_JOINTS_DEG)
                 profile = json.loads(raw_profile)
@@ -668,11 +719,14 @@ def main(argv=None):
                 if not 0 < size <= 2048:
                     raise ValueError("invalid request length")
                 body = json.loads(self.rfile.read(size))
-                accepted = cycle.submit(body.get("command"), body.get("request_id"),
-                                        body.get("schema_version"), body.get("scene_confirmed"))
+                if body.get('command') == 'set_speed':
+                    accepted = speed.update(body.get('percent'), body.get('request_id'), body.get('schema_version'))
+                else:
+                    accepted = cycle.submit(body.get("command"), body.get("request_id"),
+                                            body.get("schema_version"), body.get("scene_confirmed"))
                 self.reply(202 if accepted else 409, json.dumps({"accepted": accepted}))
-            except (ValueError, TypeError, AttributeError):
-                self.reply(400, '{}')
+            except (ValueError, TypeError, AttributeError) as exc:
+                self.reply(400, json.dumps({'error': str(exc)}))
             except OSError:
                 self.reply(503, '{"error":"journal unavailable; no authorization"}')
 

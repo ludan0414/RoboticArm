@@ -17,6 +17,7 @@
   <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>luggage_description</exec_depend>
+  <exec_depend>rcl_interfaces</exec_depend>
   <exec_depend>luggage_msgs</exec_depend>
   <exec_depend>luggage_perception</exec_depend>
   <exec_depend>moveit_configs_utils</exec_depend>

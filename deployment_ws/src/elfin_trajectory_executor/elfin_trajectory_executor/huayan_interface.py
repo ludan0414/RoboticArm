@@ -850,7 +850,12 @@ class HuayanInterface:
                 "[huayan] ServoJ densified %d -> %d points (cap %.1f deg/s)"
                 % (len(joint_path_deg), len(path), cap)
             )
-        limited = limit_servo_braking(path, servo_time, SERVO_MAX_DECEL_DEG)
+        try:
+            limited = limit_servo_braking(path, servo_time, SERVO_MAX_DECEL_DEG)
+        except ValueError as exc:
+            self.last_error_string = str(exc)
+            self._node.get_logger().error('[huayan] '+str(exc))
+            return RESULT_INVALID_GOAL
         if len(limited) != len(path):
             self._node.get_logger().info(
                 "[huayan] ServoJ accel limited %d -> %d points "

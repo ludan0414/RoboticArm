@@ -23,6 +23,13 @@ class PickReturnPath:
                              type='cartesian', target_pose=self.poses[-1],
                              required_cartesian_fraction=1.0, allow_ompl_fallback=False)
 
-    def settled(self):
+    def continuous_segment(self):
+        """Reverse every completed pose in one fully checked Cartesian action."""
+        poses = deepcopy(list(reversed(self.poses)))
+        return MotionSegment(name='return_pick_stop_0', type='cartesian',
+                             waypoints=poses[:-1], target_pose=poses[-1],
+                             required_cartesian_fraction=1.0, allow_ompl_fallback=False)
+
+    def settled(self, count=1):
         # Consume only after success so a failed return resumes at that waypoint.
-        self.poses.pop()
+        del self.poses[len(self.poses)-count:]

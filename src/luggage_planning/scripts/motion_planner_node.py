@@ -36,6 +36,8 @@ from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Image, JointState, PointCloud2
 from std_msgs.msg import String
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+from rcl_interfaces.msg import SetParametersResult
+from luggage_planning.trajectory_smoothing import validate_speed
 
 from luggage_description.scene_tf_config_utils import (
     _point_in_container_link,
@@ -107,6 +109,9 @@ class MotionPlannerNode(Node):
         self.declare_parameter("cartesian_excursion_rad_per_m", 3.0)
         self.declare_parameter("velocity_scaling", 0.3)
         self.declare_parameter("acceleration_scaling", 0.3)
+        self.declare_parameter('speed_scale', 1.0)
+        validate_speed(self.get_parameter('speed_scale').value)
+        self.add_on_set_parameters_callback(self._validate_speed_parameters)
         self.declare_parameter("max_segment_joint_excursion_rad", 0.0)
         # Settle gate between segments.
         self.declare_parameter("settle_vel_tol", 0.02)
@@ -245,6 +250,15 @@ class MotionPlannerNode(Node):
 
     # ------------------------------------------------------------------
     # shared plumbing
+
+    def _validate_speed_parameters(self, parameters):
+        try:
+            for parameter in parameters:
+                if parameter.name == 'speed_scale':
+                    validate_speed(parameter.value)
+            return SetParametersResult(successful=True)
+        except ValueError as exc:
+            return SetParametersResult(successful=False, reason=str(exc))
 
     def _accept_goal(self, goal_request):
         return GoalResponse.ACCEPT
@@ -525,6 +539,8 @@ class MotionPlannerNode(Node):
     # PlanMotion
 
     def _execute_plan_motion(self, goal_handle):
+        # Capture once. UI changes while idle; no time law changes mid-action.
+        self._executor_client.set_speed_scale(self.get_parameter('speed_scale').value)
         segment = goal_handle.request.segment
         result = PlanMotion.Result()
         name = str(segment.name)

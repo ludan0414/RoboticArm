@@ -171,8 +171,8 @@ class AdapterTests(unittest.TestCase):
         driver.get_logger=lambda:SimpleNamespace(info=lambda message:None)
         segments=driver.prepare_place_segments([],SimpleNamespace(frame='world',yaw_valid=True,
             box_size=(.59,.37,.24)),SimpleNamespace(frame='world'))
-        first=next(s for s in segments if s.name=='place_via_0')
-        self.assertLess(self.module.quaternion_angle(tool.orientation,first.target_pose.orientation),1e-7)
+        first=segments[0].waypoints[0]
+        self.assertLess(self.module.quaternion_angle(tool.orientation,first.orientation),1e-7)
         self.assertTrue(driver._cuboid_heading_report['half_turn_equivalent'])
         self.assertAlmostEqual(driver._cuboid_heading_report['selected_max_yaw_deg'],0)
         descend=next(s for s in segments if s.name=='place_descend')
@@ -204,7 +204,7 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(calls,[dict(fresh=True)])
         self.assertEqual(driver._pick_return_path.poses,[actual])
 
-    def test_carry_restores_individual_stops_instead_of_eight_batches(self):
+    def test_carry_keeps_waypoints_inside_one_action_and_separate_descent(self):
         from luggage_planning.policy_place import PlaceTarget, measured_grasp_transform
         driver=self.module.CommissioningDriver()
         box=Pose(Point(0,1.6,.1),Quaternion())
@@ -218,10 +218,12 @@ class AdapterTests(unittest.TestCase):
         driver.get_logger=lambda: SimpleNamespace(info=lambda message: None)
         segments=driver.prepare_place_segments([],SimpleNamespace(frame='world',yaw_valid=True,
             box_size=(.55,.35,.2)),SimpleNamespace(frame='world'))
-        self.assertGreater(len(segments[:-2]),30)
+        self.assertEqual(len(segments),3)
+        self.assertGreater(len(segments[0].waypoints),30)
         self.assertEqual([s.name for s in segments[-2:]],['place_descend','place_retreat'])
         self.assertEqual(segments[-2].waypoints,[])
-        self.assertTrue(all(not s.waypoints for s in segments))
+        self.assertEqual(segments[-1].waypoints,[])
+        self.assertFalse(segments[0].allow_ompl_fallback)
 
     def test_guard_checks_vias_before_endpoint_and_stops_on_blocked_via(self):
         driver=self.module.CommissioningDriver()
@@ -259,7 +261,8 @@ class AdapterTests(unittest.TestCase):
         captured=[]
         self.ports.execute=lambda segments: captured.extend(segments)
         self.ports.prepare()
-        self.assertEqual([s.target_pose.position.x for s in captured[:-1]],[3,2,1])
+        self.assertEqual([p.position.x for p in captured[0].waypoints]+[captured[0].target_pose.position.x],[3,2,1])
+        self.assertEqual(len(captured),2)
         self.assertEqual(captured[-1].name,'initialize_observe')
         self.assertEqual(path.poses,[])
         self.assertTrue(all(s.required_cartesian_fraction==1 for s in captured[:-1]))
@@ -279,8 +282,8 @@ class AdapterTests(unittest.TestCase):
         self.ports.execute=execute
         with self.assertRaisesRegex(RuntimeError,'blocked'):
             self.ports.prepare()
-        self.assertEqual(names,['return_pick_stop_1','return_pick_stop_0'])
-        self.assertEqual(len(path.poses),1)
+        self.assertEqual(names,['return_pick_stop_0'])
+        self.assertEqual(len(path.poses),2)
 
     def test_final_pose_check_refuses_yaw_error_before_release(self):
         from luggage_planning.policy_place import measured_grasp_transform
@@ -493,8 +496,9 @@ class AdapterTests(unittest.TestCase):
                               required_cartesian_fraction=1.0)
         result = driver.prepare_place_segments([first])
         self.assertEqual(calls, [("world", "suction_contact_frame", True)])
-        self.assertGreater(len(result), 1)
-        self.assertIs(result[-1], first)
+        self.assertEqual(len(result), 1)
+        self.assertGreater(len(result[0].waypoints), 1)
+        self.assertEqual(result[-1].target_pose, first.target_pose)
 
     def test_status_payload_shows_hrif_not_site_profile(self):
         snapshot = {"state": "FAULT", "stage": "APPROACH", "error": "exit 5",

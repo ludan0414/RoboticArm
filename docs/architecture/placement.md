@@ -212,6 +212,23 @@ Current Humble `motion_executor` cartesian `avoid_collisions` plus OMPL
 `RRTConnect` fallback does not read `surface_2d` and does not keep a
 scored path set (`RS-27`).
 
+## Continuous commissioning motion
+
+The commissioning console sends compatible carry-phase samples as ordered
+Cartesian waypoints in one action. It preserves full-path collision checking
+and fraction1; it does not replace a failed multi-point path with a direct OMPL
+shortcut. Lift/retract/high-lift phases, descent, release and retreat remain
+independent boundaries. Successful carry poses may be reversed as a single
+empty Cartesian return; only success consumes the reverse route.
+
+Operator speed_scale is10..100% of existing planned tempo and is captured once
+per PlanMotion. Apply it to the full trajectory time law before ExecuteTrajectory
+so MoveIt sees the slowed duration. Preserve nonzero intermediate velocities;
+bound actual cubic-Hermite velocity/acceleration analytically, including corners.
+Neither UI tempo nor continuous execution relaxes collision, payload or existing
+hardware dynamics limits. Speed changes require an idle/fault console and typed
+ROS parameter readback before confirmation.
+
 ## Replay / redesign path (not the live node)
 
 `FreeSpaceModel` replaces the sliding window with a persistent heightmap,

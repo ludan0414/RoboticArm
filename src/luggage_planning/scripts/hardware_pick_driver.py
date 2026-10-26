@@ -143,6 +143,13 @@ class RosPickSessionPorts:
                 "moveit_error_code": int(response.moveit_error_code)}
 
     def execute_segment(self, segment, candidate_id):
+        if segment.waypoints:
+            # An endpoint alone cannot replay a failed continuous request.
+            self.log_event(dict(stage='continuous_motion_request', name=segment.name,
+                type=segment.type, required_fraction=segment.required_cartesian_fraction,
+                allow_ompl_fallback=segment.allow_ompl_fallback,
+                poses=[dict(position=vars(p.position), orientation=vars(p.orientation))
+                       for p in [*segment.waypoints, segment.target_pose]]))
         if self._driver.segment_guard is not None:
             ok, message = self._driver.segment_guard(segment)
             if not ok:

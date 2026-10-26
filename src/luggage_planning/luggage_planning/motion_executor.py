@@ -189,17 +189,32 @@ def _sec_to_duration(sec):
     )
 
 
-def apply_rest_to_rest_to_joint_trajectory(joint_trajectory, vel_scale, acc_scale):
+def apply_rest_to_rest_to_joint_trajectory(joint_trajectory, vel_scale, acc_scale, speed_scale=1.):
     """Replace TOTG or linear times with the site rest-to-rest trapezoid.
 
     Keeps the geometric knots. Writes time_from_start, velocities, and
     accelerations capped to 60 deg/s and 20 deg/s^2 on both ramps.
     """
-    points = list(joint_trajectory.points)
+    # A duplicate geometric knot has no transit to time. Giving it a 1us span
+    # with nonzero tangent creates enormous artificial Hermite acceleration.
+    points = []
+    for point in joint_trajectory.points:
+        if not point.positions or any(not math.isfinite(float(v)) for v in point.positions):
+            raise ValueError('trajectory joint positions must be nonempty and finite')
+        if (not points or len(point.positions) != len(points[-1].positions)
+                or max(abs(a-b) for a,b in zip(point.positions, points[-1].positions)) > 1e-10):
+            points.append(point)
+    joint_trajectory.points = points
     if len(points) < 2:
+        if points:
+            points[0].time_from_start = _sec_to_duration(0.)
+            points[0].velocities = [0.] * len(points[0].positions)
+            points[0].accelerations = [0.] * len(points[0].positions)
         return None
     timed = time_parameterize_cartesian(
         [list(pt.positions) for pt in points], vel_scale, acc_scale)
+    from luggage_planning.trajectory_smoothing import smooth_timing
+    timed = smooth_timing([list(pt.positions) for pt in points], timed, speed_scale)
     for point, t_s, vel, acc in zip(
             points, timed.times_s, timed.velocities_rad,
             timed.accelerations_rad):
@@ -844,12 +859,12 @@ class MotionExecutor:
         if joint_trajectory is None:
             return None
         timed = apply_rest_to_rest_to_joint_trajectory(
-            joint_trajectory, self._vel_scale, self._acc_scale)
+            joint_trajectory, self._vel_scale, self._acc_scale, getattr(self, '_speed_scale', 1.))
         if timed is not None:
             self._node.get_logger().info(
                 "rest-to-rest duration=%.3fs path=%.4f rad "
                 "v_peak=%.3f rad/s a_acc=%.3f a_decel=%.3f rad/s^2 "
-                "(site accel 60 deg/s^2, decel 20 deg/s^2)"
+                "(site accel/decel <=20 deg/s^2)"
                 % (timed.duration, timed.path_length, timed.v_peak,
                    timed.a_max, timed.a_decel)
             )
@@ -861,6 +876,11 @@ class MotionExecutor:
             return True, "joint excursion guard not configured"
         from luggage_planning.hardware_motion_guard import planned_joint_excursion
         return planned_joint_excursion(trajectory, maximum)
+
+    def set_speed_scale(self, scale):
+        """Capture the tempo for the next complete action, before planning."""
+        from luggage_planning.trajectory_smoothing import validate_speed
+        self._speed_scale = validate_speed(scale)
 
     def _execute_robot_trajectory(self, robot_traj, name, fraction,
                                   feedback_cb, execute_timeout):
@@ -881,7 +901,8 @@ class MotionExecutor:
         if handle is None or not handle.accepted:
             return self._result(
                 False, "ExecuteTrajectory goal rejected", fraction)
-        wrapped = self._wait_goal(handle, execute_timeout)
+        from luggage_planning.trajectory_smoothing import execution_timeout
+        wrapped = self._wait_goal(handle, execution_timeout(goal.trajectory, execute_timeout))
         if wrapped is None:
             handle.cancel_goal()
             return self._result(False, "ExecuteTrajectory timeout", fraction)
@@ -1054,7 +1075,8 @@ class MotionExecutor:
         if handle is None or not handle.accepted:
             return SegmentExecResult(
                 False, "ExecuteTrajectory goal rejected", fraction)
-        wrapped = self._wait_goal(handle, execute_timeout)
+        from luggage_planning.trajectory_smoothing import execution_timeout
+        wrapped = self._wait_goal(handle, execution_timeout(goal.trajectory, execute_timeout))
         if wrapped is None:
             handle.cancel_goal()
             return SegmentExecResult(
