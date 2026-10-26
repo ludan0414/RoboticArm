@@ -103,9 +103,24 @@ python policy/export_hardware_loading_profile.py \
   --output /ABS/site/loading_cycle_from_demo.json
 ```
 
-`runs` 目录需存在；journal 必须为新文件，已有文件会拒绝启动，避免覆盖故障记录或
-重启后默默重放原箱单。配置快照、哈希、确认和阶段存入该文件；
-每箱另存 `<journal>.box001.jsonl` 抓取/放置明细。
+`runs` 目录需存在；允许复用同一个 `--journal` 文件，启动时覆盖旧的会话日志。
+每箱另存 `<journal>.box001.jsonl` 等明细，同一箱重试时覆盖该箱明细，
+不再因为 `File exists` 阻止开始下一次尝试。未执行箱子的旧明细不会自动删除。
+
+可用 `--start-box N` 从配置中的第 N 箱开始（从1编号，默认1）。例如从蓝色箱开始：
+
+```bash
+bash scripts/run_loading_console.sh \
+  --site-profile /ABS/site/loading_cycle.json \
+  --journal /ABS/site/runs/loading_001.jsonl \
+  --start-box 3
+```
+
+当前四箱序号：1黑、2红、3蓝、4灰。保留原箱号、对应尺寸和放置目标，
+从第3箱开始会只执行第3、4箱；页面本轮进度从 `0/2` 开始。
+跳过项不计入本轮完成数，也不会凭空创建之前箱子的占位或恢复旧故障状态。
+启动仍需初始化或跳过初始化，再单独点击 Pick；参数本身不会触发机械臂动作。
+
 
 在笔记本浏览器打开 `http://127.0.0.1:8765`：
 

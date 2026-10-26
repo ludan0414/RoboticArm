@@ -49,6 +49,48 @@ def submit(cycle, command):
 
 
 class LoadingCycleTest(unittest.TestCase):
+    def test_start_box_runs_remaining_absolute_indices_and_counts_only_this_run(self):
+        ports=Ports()
+        cycle=LoadingCycle(ports,4,start_box=3)
+        self.assertEqual(ports.calls,[])
+        self.assertEqual(cycle.snapshot()['next_box'],3)
+        self.assertEqual(cycle.snapshot()['completed'],0)
+        self.assertEqual(cycle.snapshot()['skipped'],2)
+        self.assertEqual(cycle.snapshot()['run_total'],2)
+        self.assertTrue(submit(cycle,'skip_initialize'))
+        self.assertTrue(submit(cycle,'pick'))
+        self.assertEqual(cycle.snapshot()['next_box'],4)
+        self.assertEqual(cycle.snapshot()['completed'],1)
+        self.assertTrue(submit(cycle,'pick'))
+        self.assertEqual(cycle.state,'COMPLETE')
+        self.assertEqual(cycle.snapshot()['completed'],2)
+        self.assertEqual([c for c in ports.calls if c[0]=='pick_place'],
+                         [('pick_place',2),('pick_place',3)])
+        self.assertEqual([c for c in ports.calls if c[0]=='return'],
+                         [('return',2),('return',3)])
+
+    def test_invalid_start_box_cannot_start_effects(self):
+        for start in (0,-1,5,True,1.5):
+            ports=Ports()
+            with self.assertRaises(ValueError):
+                LoadingCycle(ports,4,start_box=start)
+            self.assertEqual(ports.calls,[])
+
+    def test_starting_last_box_preserves_index_through_fault_and_recovery(self):
+        ports=Ports('pick_place')
+        cycle=LoadingCycle(ports,4,start_box=4)
+        submit(cycle,'skip_initialize')
+        submit(cycle,'pick')
+        self.assertEqual(cycle.snapshot()['completed'],0)
+        self.assertEqual(cycle.snapshot()['next_box'],4)
+        ports.fail=''
+        submit(cycle,'recover')
+        self.assertEqual(cycle.snapshot()['next_box'],4)
+        submit(cycle,'skip_initialize')
+        submit(cycle,'pick')
+        self.assertEqual(cycle.state,'COMPLETE')
+        self.assertEqual(cycle.snapshot()['completed'],1)
+
     def test_controller_recovery_clears_fault_without_release_or_count_change(self):
         ports = Ports("pick_place")
         cycle = LoadingCycle(ports, 2)

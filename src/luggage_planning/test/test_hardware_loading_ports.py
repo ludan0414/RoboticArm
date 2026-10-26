@@ -4,6 +4,8 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 import unittest
 import time
+import ast
+import tempfile
 from unittest.mock import patch
 
 from luggage_planning.pose import MotionSegment, Point, Pose, Quaternion
@@ -49,6 +51,39 @@ def load_console():
 
 
 class AdapterTests(unittest.TestCase):
+    def test_retrying_box_overwrites_existing_trace_using_real_port_constructor(self):
+        path=Path(__file__).resolve().parents[1]/'scripts/hardware_pick_driver.py'
+        tree=ast.parse(path.read_text())
+        owner=next(n for n in tree.body if isinstance(n,ast.ClassDef) and n.name=='RosPickSessionPorts')
+        owner.body=[n for n in owner.body if isinstance(n,ast.FunctionDef) and n.name=='__init__']
+        scope=dict(Bool=object,String=object,QoSProfile=lambda **kwargs:None,
+            DurabilityPolicy=SimpleNamespace(TRANSIENT_LOCAL=1),
+            ReliabilityPolicy=SimpleNamespace(RELIABLE=1))
+        exec(compile(ast.Module(body=[owner],type_ignores=[]),str(path),'exec'),scope)
+        ports_type=scope['RosPickSessionPorts']
+        ports_type._on_di0=ports_type._on_current_box=lambda self,msg:None
+        driver=SimpleNamespace(exclusive_trace=self.module.CommissioningDriver.exclusive_trace,_group=None)
+        node=SimpleNamespace(create_subscription=lambda *args,**kwargs:None)
+        with tempfile.TemporaryDirectory() as directory:
+            trace=Path(directory)/'loading.jsonl.box003.jsonl'
+            for text in ('previous failure\n','new attempt\n'):
+                ports=ports_type(node,driver,str(trace))
+                ports._trace_file.write(text)
+                ports._trace_file.close()
+            self.assertEqual(trace.read_text(),'new attempt\n')
+
+    def test_third_box_uses_third_target_dimensions_and_absolute_trace_number(self):
+        target=SimpleNamespace(reference_box_size_m=(.55,.36,.23))
+        self.ports.cycles=[(None,()),(None,()),(target,())]
+        self.ports.journal=SimpleNamespace(name='/tmp/loading.jsonl')
+        self.driver.release_touch_links=()
+        self.driver._scene_client=lambda:SimpleNamespace(set_acm_pairs=lambda *args:(True,'ok'))
+        observed=[]
+        self.driver.run=lambda:(observed.append((self.driver._args.place_target_data,
+            self.driver._configured_payload_size,self.driver._args.trace_out)) or 0)
+        self.ports.pick_place(2)
+        self.assertEqual(observed,[(target,(.55,.36,.23),'/tmp/loading.jsonl.box003.jsonl')])
+
     def test_seal_records_actual_tool_tf_instead_of_candidate_orientation(self):
         from luggage_planning.policy_place import box_pose_from_grasp
         module = load_console()

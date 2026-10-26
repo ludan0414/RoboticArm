@@ -61,11 +61,14 @@ class LoadingCycle:
     Methods raise on failure. The adapter must only return after settled motion.
     A failed or interrupted session requires explicit on-site recovery.
     """
-    def __init__(self, ports, count):
+    def __init__(self, ports, count, start_box=1):
+        if type(start_box) is not int or not 1 <= start_box <= count:
+            raise ValueError('start_box must be between 1 and the configured box count')
         self.ports, self.count = ports, count
+        self.start_box = start_box
         self.lock = threading.RLock()
         self.state, self.stage, self.error = "WAIT_START", "WAIT_START", ""
-        self.index = 0
+        self.index = start_box - 1
         self.request_id = uuid.uuid4().hex
         self.worker = None
         self.axis_test_completed = False
@@ -75,7 +78,9 @@ class LoadingCycle:
         with self.lock:
             return dict(state=self.state, stage=self.stage, error=self.error,
                         next_box=self.index + 1 if self.index < self.count else None,
-                        completed=self.index, total=self.count,
+                        completed=self.index - (self.start_box - 1), total=self.count,
+                        start_box=self.start_box, skipped=self.start_box - 1,
+                        run_total=self.count - self.start_box + 1,
                         return_pending=self.return_pending,
                         axis_test_motion_completed=self.axis_test_completed,
                         request_id=self.request_id, schema_version=1)

@@ -158,7 +158,7 @@ function render(){
   txt('recover-result',recovery.stage?('最近恢复：'+recovery.stage+' · '+(recovery.message||'')):'');
   txt('cycle-state',current.state);
   txt('cycle-stage',current.stage);
-  txt('cycle-box',(current.completed||0)+' / '+(current.total||0));
+  txt('cycle-box',(current.completed||0)+' / '+(current.run_total||current.total||0));
   txt('cycle-error',current.error||'无');
   paint('cycle-card',current.state==='FAULT'?'fault':current.state==='BUSY'?'moving':'ok');
   if(hw.available){
@@ -284,7 +284,8 @@ class CommissioningDriver(HardwarePickDriver):
 
     """Keep nominal placed-box collision proxies separate from cargo mapping."""
     release_touch_links = ("suction_panel", "suction_contact_frame")
-    exclusive_trace = True
+    # Explicit operator preference: retrying the same box replaces its trace.
+    exclusive_trace = False
 
     def lookup_pose(self, target, source, fresh=False):
         from rclpy.time import Time
@@ -515,7 +516,7 @@ class HardwarePorts:
             del self.driver._effective_place_target
         self.driver._measured_grasp = None
         self.driver.placed_proxy_id = "expected_placed_%s_%d" % (self.session, index)
-        # Separate immutable trace per box, never overwrite a previous fault.
+        # Separate trace per absolute box number; retries overwrite that box's trace.
         self.driver._args.trace_out = "%s.box%03d.jsonl" % (self.journal.name, index + 1)
         code = self.driver.run()
         if code != 0:
@@ -534,7 +535,9 @@ class HardwarePorts:
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--site-profile", required=True)
-    parser.add_argument("--journal", required=True, help="new JSONL file; existing files refused")
+    parser.add_argument("--journal", required=True, help="JSONL session file; existing file is overwritten")
+    parser.add_argument("--start-box", type=int, default=1,
+                        help="start at this configured box number (1-based; default: 1)")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--runtime-config", default="", help="site pick runtime YAML")
     cli = parser.parse_args(argv)
@@ -545,6 +548,8 @@ def main(argv=None):
     fcntl.flock(cell_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     raw_profile = Path(cli.site_profile).read_bytes()
     observe, cycles = parse_profile(json.loads(raw_profile))
+    if not 1 <= cli.start_box <= len(cycles):
+        parser.error('--start-box must be between 1 and %d' % len(cycles))
     motion_guard = HardwareMotionGuard(json.loads(raw_profile))
     from luggage_planning.carry_entry import CarryConfig
     entry_settings = json.loads(raw_profile).get("carry_entry")
@@ -555,7 +560,7 @@ def main(argv=None):
     args.skip_observe = True  # Initialization/return use the fixed joint home via MoveIt.
     args.place_target_data = None
     token, session = secrets.token_hex(32), secrets.token_hex(8)
-    journal = open(cli.journal, "x", encoding="utf-8")
+    journal = open(cli.journal, "w", encoding="utf-8")
     rclpy.init()
     driver = CommissioningDriver(args)
     from tf2_ros import Buffer, TransformListener
@@ -567,8 +572,8 @@ def main(argv=None):
     driver.detection_guard = driver.guard_detection
     ports = HardwarePorts(driver, observe, cycles, journal, session)
     ports.record(dict(event="session", profile_sha256=hashlib.sha256(raw_profile).hexdigest(),
-                      profile=json.loads(raw_profile), session=session))
-    cycle = LoadingCycle(ports, len(cycles))
+                      profile=json.loads(raw_profile), session=session, start_box=cli.start_box))
+    cycle = LoadingCycle(ports, len(cycles), start_box=cli.start_box)
     driver.stage_callback = cycle.stage_changed
     driver._console_hardware = {"available": False}
     driver._console_event = {}
