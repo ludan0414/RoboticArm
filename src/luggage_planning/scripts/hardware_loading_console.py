@@ -24,6 +24,7 @@ from luggage_planning.release_confirmation import wait_for_release
 from luggage_planning.commissioning_home import HOME_JOINTS_DEG, HOME_SEGMENT_TYPE
 from luggage_planning.placement_approach import lower_final_approach
 from luggage_planning.placement_payload import release_above_support
+from luggage_planning.cuboid_heading import nearest_cuboid_heading
 from luggage_planning.doorway_motion import DoorwayMotionGuard
 from luggage_planning.pick_return_path import PickReturnPath
 from luggage_planning.hardware_motion_guard import (HardwareMotionGuard, axis_test_segments,
@@ -314,14 +315,17 @@ class CommissioningDriver(HardwarePickDriver):
         return self.motion_guard.check_pickup(detection, None)
 
     def prepare_place_segments(self, segments, detection=None, candidate=None):
-        from luggage_planning.policy_place import connect_place_from_pose, build_place_segments
+        from luggage_planning.policy_place import connect_place_from_pose, build_place_segments, box_pose_from_grasp
         actual = self.lookup_pose("world", "suction_contact_frame", fresh=True)
         grasp = getattr(self, "_measured_grasp", None)
         if detection is not None and candidate is not None:
             if grasp is None:
                 raise RuntimeError("actual sealed-contact TF missing; refusing nominal grasp placement")
             target = release_above_support(self._args.place_target_data)
+            target,self._cuboid_heading_report=nearest_cuboid_heading(
+                target,box_pose_from_grasp(actual,grasp))
             self._effective_place_target = target
+            self.get_logger().info('cuboid heading: '+json.dumps(self._cuboid_heading_report))
             self.get_logger().info('placement payload height: configured=%s reference=%s target=%s' % (
                 detection.box_size, target.reference_box_size_m, vars(target.box_pose.position)))
             target = lower_final_approach(target)

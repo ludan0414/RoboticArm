@@ -713,6 +713,9 @@ class HardwarePickDriver(Node):
                 selected = next((c for c in detection.candidates
                                  if c.candidate_id == result.selected_candidate_id), None)
                 segments = self.prepare_place_segments(segments, detection, selected)
+                heading = getattr(self, '_cuboid_heading_report', None)
+                if heading is not None:
+                    ports.log_event(dict(stage='cuboid_heading', **heading))
                 for segment in segments:
                     ports.log_event(dict(stage="place_target", name=segment.name,
                                          pose=vars(segment.target_pose.position),

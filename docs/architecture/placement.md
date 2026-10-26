@@ -29,6 +29,12 @@ Hard rules:
   rewrite the ACM; it uses normal MoveIt trajectory collision checking.
   Final support/placement poses must not be silently shifted to satisfy
   doorway clearance; replan the entry corridor or reject the slot.
+- For the operator's rectangular commissioning payload model, wheels/front/back
+  are intentionally ignored. The console may select one box-local Z half-turn
+  symmetry for the complete route to keep yaw within90deg of the picked box.
+  This preserves the full occupied cuboid and its centre; a90deg axis swap is
+  still a policy decision. Regenerate TCP goals from the unchanged measured
+  grasp, and use the selected heading for release validation and expected proxy.
 - Stacking on previously placed cargo is allowed only on **known** support.
   Unobserved columns may land on the a-priori floor (`peak ≈ floor_z`,
   `support_source=floor_prior`). Stacking on an unobserved surface

@@ -157,6 +157,40 @@ class AdapterTests(unittest.TestCase):
         driver.lookup_pose=lambda *args,**kwargs: descend.target_pose
         self.assertTrue(driver.validate_place_pose()[0])
 
+    def test_red_cuboid_half_turn_is_removed_and_release_uses_selected_heading(self):
+        from luggage_planning.policy_place import PlaceTarget, measured_grasp_transform
+        driver=self.module.CommissioningDriver()
+        box=Pose(Point(0,1.6,.12),Quaternion())
+        tool=Pose(Point(.01,1.6,.24),Quaternion(0,1,0,0))
+        driver._measured_grasp=measured_grasp_transform(box,tool)
+        target=PlaceTarget(Pose(Point(-1,.5,.65),Quaternion(0,0,1,0)),.15,
+            via=(Pose(Point(0,1.2,1.2),Quaternion(0,0,1,0)),),
+            reference_box_size_m=(.59,.37,.24))
+        driver._args=SimpleNamespace(place_target_data=target)
+        driver.lookup_pose=lambda *args,**kwargs:tool
+        driver.get_logger=lambda:SimpleNamespace(info=lambda message:None)
+        segments=driver.prepare_place_segments([],SimpleNamespace(frame='world',yaw_valid=True,
+            box_size=(.59,.37,.24)),SimpleNamespace(frame='world'))
+        first=next(s for s in segments if s.name=='place_via_0')
+        self.assertLess(self.module.quaternion_angle(tool.orientation,first.target_pose.orientation),1e-7)
+        self.assertTrue(driver._cuboid_heading_report['half_turn_equivalent'])
+        self.assertAlmostEqual(driver._cuboid_heading_report['selected_max_yaw_deg'],0)
+        descend=next(s for s in segments if s.name=='place_descend')
+        driver.lookup_pose=lambda *args,**kwargs:descend.target_pose
+        self.assertTrue(driver.validate_place_pose()[0])
+        driver.events,driver.detach_ok=[],True
+        driver._scene_box=([0,1.6,.12],[0,0,0,1],[.59,.37,.24])
+        driver.release_touch_links=()
+        driver.placed_proxy_id='expected_red'
+        proxies=[]
+        driver._scene_client=lambda:SimpleNamespace(
+            set_acm_pairs=lambda *args:(True,'ok'),
+            add_collision_box=lambda *args:(proxies.append(args) or True,'ok'))
+        self.assertTrue(driver.remove_scene_box()[0])
+        expected=driver._effective_place_target.box_pose.orientation
+        self.assertEqual(proxies[0][2],[expected.x,expected.y,expected.z,expected.w])
+        self.assertEqual(proxies[0][3],[.59,.37,.24])
+
     def test_breadcrumb_records_actual_pick_stop_and_excludes_descent(self):
         driver=self.module.CommissioningDriver()
         actual=Pose(Point(.1,1.6,.6),Quaternion(1,0,0,0))
