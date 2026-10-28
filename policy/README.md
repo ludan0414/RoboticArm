@@ -621,3 +621,15 @@ A separate `compile_spaced_full.py` attempts all recorded placement paths plus
 empty return; it does not by itself generate or validate ground-feeder or real
 hardware motion. Only a successfully verified ground-feeder bundle can be
 passed to `export_hardware_loading_profile.py`.
+
+### Eight-case operator-assumed ground entry
+
+The current hardware template is explicitly exported from the fully validated
+inside-and-return bundle `demo_data/measured8_spaced_inside_full`. The user
+requested proceeding before the ground-connection simulation finished. Only
+three ground cases completed; the fourth was interrupted during return. The
+profile records `ground_entry_simulation_validated=false` and
+`ground_entry_assumed_by_operator=true`; real MoveIt, attached payload,
+pedestal/doorway checks and recorded-path return remain active. The third base
+has zero flat/slope edge margin. No real-hardware or dynamic verification is
+claimed. See `deployment_ws/docs/measured8_status.md` before operation.

@@ -1,18 +1,24 @@
-# 8 箱现场方案：候审草案
+# 八箱真机配置与验证范围
 
-`config/loading_cycle.measured8.review.json` 是从已检查的 Newton 有箱动作中提取的
-8 箱顺序、尺寸、目标和候选携箱位姿，供核对。它的 `deployable=false` 且不含
-可运行 profile 标识，操作台会拒绝加载；它不能用于真机动作。
+默认现场 profile `deployment_ws/config/loading_cycle.site.template.json` 现在包含八箱，
+顺序：红、银、蓝、粉、小灰、青铜白、黑、灰。blackwhite 与 blackbronze 是两只
+独立箱子，均未选入这次方案。三堆分别为红/银/蓝、粉/小灰、青铜白/黑/灰。
 
-当前默认 `config/loading_cycle.site.template.json` 仍是原四色四箱。用户本轮要求
-原路复位：已完成的携箱路点按实际执行记录逆序回到 Pick 抬起停留位，再按原来方式
-规划至示教器照片固定关节位。回程笛卡尔路径不完整时停止，不运行路径片段、不逐点
-重新规划绕路；本轮返回还需要完成一次完整实机环境的验证。
+舱内源包 `policy/demo_data/measured8_spaced_inside_full/` 的八箱抓取、携箱、
+放置和仿真原路退回已完成逐帧碰撞检查。真机不播放这些关节帧，而用每箱尺寸、
+目标和携箱箱体位姿实时规划；Pick 仍由视觉决定。放置后沿本轮完成的携箱路点
+反向至 Pick 抬起停留位，再规划到示教器固定关节位。反向笛卡尔路径不完整或
+碰撞受阻时停止，不执行部分路径或重新规划绕路；未完成路点保留。
 
-八箱图像中每只箱子的接近、携箱、放置在仿真中检查过，但箱间空手移动采用瞬移，
-地面上料到门口的接驳没有检查，也没有实机验收。第三堆底层紧贴平底与斜面边界，
-该方向没有尺寸或位置误差余量。不能将此草案复制到现场 profile 后启动。
+**地面上料接驳未全部仿真验证。** 地面基座坐标 `(-1.6, 0)` 的桥接检查已完成
+前三箱，第四箱停在退回阶段，余下未运行。用户要求赶紧录制，按现场指示假定接驳
+可行。profile 用既有现场高位接驳与 MoveIt 实时碰撞检查，并明确记录
+`ground_entry_simulation_validated=false`、`ground_entry_assumed_by_operator=true`、
+`hardware_motion_validated=false`；不要把它说成八箱地面接驳或真机已验证。
 
-要制作可部署配置，需先得到八箱完整仿真轨迹（包括原路退回），再用原 ground
-feeder 桥接器验证真实上料位、底座和门框，最后使用仓库现有 profile 导出器。导出器
-要求完成包和经核对的 ground feeder 配置；不要伪造 READY 标记绕过该要求。
+堆间最小间距约 10 cm、6 cm，但第三堆底箱紧贴平底/斜面交界，**该边界没有余量**。
+现场尺寸、摆放、吸附和标定误差可能改变间隙，实际环境及碰撞几何须现场核对。
+候审草案 `config/loading_cycle.measured8.review.json` 保留供对照，并非运行 profile。
+
+拉取后重新构建受影响 ROS 包并重启后台和操作台；如果之前把 JSON 复制到仓库外，
+还须更新操作台实际读取的那份 profile。完整窗口命令见 [操作台文档](loading_console.md)。

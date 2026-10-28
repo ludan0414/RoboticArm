@@ -1,0 +1,123 @@
+{
+  "success": true,
+  "boxes": 8,
+  "frames": 3389,
+  "max_grasp_drift_m": 3.4374319970862974e-16,
+  "scene_recording": {
+    "success": true,
+    "boxes": 8,
+    "frames": 3389,
+    "spawn_order": [
+      "B4",
+      "B5",
+      "B1",
+      "B6",
+      "B12",
+      "B10",
+      "B2",
+      "B3"
+    ],
+    "final_poses": [
+      {
+        "id": "B4",
+        "position_error_m": 1.2668091092388813e-06,
+        "orientation_error_rad": 0.0,
+        "spawn_position_world_m": [
+          -0.4553142189979553,
+          0.44846343994140625,
+          1.0456187725067139
+        ],
+        "spawn_frame": 2,
+        "release_frame": 221
+      },
+      {
+        "id": "B5",
+        "position_error_m": 1.3692328954547783e-06,
+        "orientation_error_rad": 0.0,
+        "spawn_position_world_m": [
+          -0.4553142189979553,
+          0.44846343994140625,
+          1.0456187725067139
+        ],
+        "spawn_frame": 405,
+        "release_frame": 609
+      },
+      {
+        "id": "B1",
+        "position_error_m": 1.0432758698729387e-06,
+        "orientation_error_rad": 0.0,
+        "spawn_position_world_m": [
+          -0.4553142189979553,
+          0.44846343994140625,
+          1.0456187725067139
+        ],
+        "spawn_frame": 778,
+        "release_frame": 982
+      },
+      {
+        "id": "B6",
+        "position_error_m": 2.2201275139951548e-06,
+        "orientation_error_rad": 0.0,
+        "spawn_position_world_m": [
+          -0.4553142189979553,
+          0.44846343994140625,
+          1.0456187725067139
+        ],
+        "spawn_frame": 1152,
+        "release_frame": 1382
+      },
+      {
+        "id": "B12",
+        "position_error_m": 1.4641057577755837e-06,
+        "orientation_error_rad": 0.0,
+        "spawn_position_world_m": [
+          -0.4553142189979553,
+          0.44846343994140625,
+          1.0456187725067139
+        ],
+        "spawn_frame": 1577,
+        "release_frame": 1795
+      },
+      {
+        "id": "B10",
+        "position_error_m": 1.1851343007307173e-06,
+        "orientation_error_rad": 0.0,
+        "spawn_position_world_m": [
+          -0.4553142189979553,
+          0.44846343994140625,
+          1.0456187725067139
+        ],
+        "spawn_frame": 1979,
+        "release_frame": 2245
+      },
+      {
+        "id": "B2",
+        "position_error_m": 1.100431719650741e-06,
+        "orientation_error_rad": 0.0,
+        "spawn_position_world_m": [
+          -0.4553142189979553,
+          0.44846343994140625,
+          1.0456187725067139
+        ],
+        "spawn_frame": 2477,
+        "release_frame": 2725
+      },
+      {
+        "id": "B3",
+        "position_error_m": 1.015481056817955e-06,
+        "orientation_error_rad": 0.0,
+        "spawn_position_world_m": [
+          -0.4553142189979553,
+          0.44846343994140625,
+          1.0456187725067139
+        ],
+        "spawn_frame": 2939,
+        "release_frame": 3187
+      }
+    ]
+  },
+  "payload_checked_frames": 3303,
+  "penetration_tolerance_m": 0.001,
+  "initial_reset_count": 1,
+  "online_planning_during_replay": false
+}
