@@ -127,6 +127,13 @@ class CenteredEntryTests(unittest.TestCase):
                 self.assertEqual(route.via[0],start)
                 progress=[longitudinal(p) for p in route.via]
                 self.assertTrue(all(b >= a-1e-8 for a,b in zip(progress,progress[1:])),progress[:5])
+                if index == 0:
+                    self.assertAlmostEqual(report['first_box_inside_drop_m'], .12, places=3)
+                    self.assertTrue(any(abs(p.position.x-route.via[-1].position.x)>.1
+                                        and p.position.z < report['inside_box_pose']['position']['z']-.1
+                                        for p in route.via))
+                else:
+                    self.assertEqual(report['first_box_inside_drop_m'], 0.)
 
     def test_impossible_width_or_no_inside_pose_fails_closed(self):
         target = self.cycles[5][0]

@@ -18,6 +18,7 @@ MAX_TRANSIT_LOWERING_M = .08
 CENTRE_OFFSETS_M = (0., .05, -.05, .10, -.10)
 HORIZONTAL_CARGO_CLEARANCE_M = .03
 P2_FORWARD_CENTRE_STEP_M = .01
+FIRST_BOX_INSIDE_DROP_M = .12
 
 
 def xyz(pose):
@@ -53,7 +54,7 @@ def crosses_footprint(start, end, cargo, cargo_size, payload_extent, margin):
 
 
 class CenteredDoorwayEntry:
-    strategy = 'p2_centre_enter_then_lane_v3'
+    strategy = 'p2_centre_enter_then_lane_v4'
 
     def __init__(self, geometry, carry_config=None):
         self.geometry, self.carry_config = geometry, carry_config
@@ -150,11 +151,20 @@ class CenteredDoorwayEntry:
         y = nominal_y+center_offset
         outside = Pose(Point(*world((outside_x,y,local_z))), lane.orientation)
         inside = Pose(Point(*world((inside_x,y,local_z))), lane.orientation)
+        # The empty first slot needs no overflight of earlier cargo. Once the
+        # box is fully inside, descend before traversing to its far lane:
+        # staying at the doorway height drove J3 to -13° and the next IK
+        # target past the arm's reach in the first-box site trace.
+        early_drop = not cargo and start_box_pose is not None
+        transit_z = max(lane.position.z, inside.position.z-FIRST_BOX_INSIDE_DROP_M) if early_drop else inside.position.z
+        lowered_inside = replace(inside, position=Point(
+            inside.position.x, inside.position.y, transit_z))
         high_lane = replace(lane, position=Point(lane.position.x, lane.position.y,
-                                                max(lane.position.z, inside.position.z)))
+                                                max(lane.position.z, transit_z)))
         # Explicit dense waypoints preserve the reviewed corner at each phase.
         route = [start_box_pose, outside] if start_box_pose is not None else [outside]
-        for goal in [inside, high_lane, lane]:
+        goals = [inside, lowered_inside, high_lane, lane] if early_drop else [inside, high_lane, lane]
+        for goal in goals:
             pieces = connect_place_from_pose(route[-1], [MotionSegment(
                 name='doorway_entry', type='cartesian', target_pose=goal)],
                 ENTRY_SAMPLE_M, math.radians(5))
@@ -167,5 +177,6 @@ class CenteredDoorwayEntry:
             lowered_from_all_cargo_baseline_m=(baseline_z-local_z)*rotation[2][2],
             height_relevant_prior_boxes=relevant,
             outside_box_pose=asdict(outside), inside_box_pose=asdict(inside),
+            first_box_inside_drop_m=(inside.position.z-transit_z if early_drop else 0.),
             replaced_via_poses=len(target.via), via_count=len(route),
             minimum_transit_box_bottom_world_m=bottom)
