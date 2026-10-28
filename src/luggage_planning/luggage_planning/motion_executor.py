@@ -643,8 +643,16 @@ class MotionExecutor:
         from_p1 = (c.x-a.x, c.y-a.y, c.z-a.z)
         progress = sum(v*d for v,d in zip(from_p1, direction)) / length_sq
         distance = math.sqrt(sum((v-progress*d)**2 for v,d in zip(from_p1, direction)))
-        if not -0.02 <= progress <= 1.02 or distance > 0.02:
-            return self._result(False, 'CARRY_TCP_LINE: start is off taught TCP line; carry-home required')
+        # P1 arrival is accepted by the controller with about 1 degree of
+        # joint settling error. Its TCP can therefore sit >2 cm off the
+        # ideal P1-P2 line; the Cartesian request starts at the actual pose.
+        near_p1 = max(abs(float(q)-float(t)) for q,t in zip(
+            current_joints, TRANSFER_JOINTS_RAD[0])) <= 0.03
+        if not near_p1 and (not -0.02 <= progress <= 1.02 or distance > 0.02):
+            return self._result(False,
+                'CARRY_TCP_LINE: start off taught TCP line '
+                '(progress=%.3f distance=%.3fm); carry-home required' % (
+                    progress, distance))
         request = GetCartesianPath.Request()
         request.header.frame_id = self._frame
         request.group_name = self._group

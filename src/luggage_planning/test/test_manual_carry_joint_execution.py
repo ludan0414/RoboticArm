@@ -58,3 +58,16 @@ def test_partial_tcp_line_is_never_executed():
     assert not result.success
     assert 'incomplete' in result.message
     assert len(requests) == 1 and not executed
+
+
+def test_p1_settling_error_can_start_actual_tcp_line():
+    executor, requests, executed = fake_executor()
+    start, goal = TRANSFER_JOINTS_RAD
+    measured = [q + 0.018 for q in start]
+    executor._fk_pose = lambda joints: (
+        NS(position=NS(x=-1.0, y=0.0, z=0.7)) if list(joints) == list(start)
+        else NS(position=NS(x=-0.1, y=0.0, z=0.7)) if list(joints) == list(goal)
+        else NS(position=NS(x=-1.01, y=0.04, z=0.7)))
+    result = executor._run_taught_tcp_line(goal, None, 45., measured, NS(name='carry_p2'))
+    assert result.success and len(requests) == len(executed) == 1
+    assert list(requests[0].start_state.joint_state.position) == measured
