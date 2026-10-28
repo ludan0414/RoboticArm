@@ -599,6 +599,12 @@ class MotionPlannerNode(Node):
                 boundary.pop('target')
                 boundary['target_joints_deg'] = list(HOME_JOINTS_DEG)
                 boundary['target_joints_rad'] = list(HOME_JOINTS_RAD)
+            from luggage_planning.manual_carry_transfer import TRANSFER_TYPES, TRANSFER_JOINTS_DEG, TRANSFER_JOINTS_RAD
+            if segment.type in TRANSFER_TYPES:
+                index = TRANSFER_TYPES.index(segment.type)
+                boundary.pop('target')
+                boundary['target_joints_deg'] = list(TRANSFER_JOINTS_DEG[index])
+                boundary['target_joints_rad'] = list(TRANSFER_JOINTS_RAD[index])
             self._emit_boundary(name, extra=boundary, success=ok)
         except Exception as exc:  # noqa: BLE001 - action boundary
             self.get_logger().error("segment %s raised: %s" % (name, exc))
@@ -627,6 +633,18 @@ class MotionPlannerNode(Node):
             result.success = False
             result.message = "%s; settle timeout" % message
             return result
+
+        from luggage_planning.manual_carry_transfer import (
+            TRANSFER_TYPES, TRANSFER_SETTLE_TOLERANCE_RAD, target_joint_error,
+        )
+        if segment.type in TRANSFER_TYPES:
+            error = target_joint_error(segment.type, self._joint_positions()[0])
+            if error is None or error > TRANSFER_SETTLE_TOLERANCE_RAD:
+                goal_handle.abort()
+                result.success = False
+                result.message = ('%s; P1/P2 actual joint target not reached: %s rad'
+                                  % (message, 'missing' if error is None else '%.4f' % error))
+                return result
 
         if goal_handle.is_cancel_requested:
             goal_handle.canceled()

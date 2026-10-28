@@ -377,6 +377,10 @@ class MotionExecutor:
             self._last_boundary['cartesian_recovery'] = self._cartesian_recovery
         if getattr(self, '_cartesian_partial', None) is not None:
             self._last_boundary['discarded_cartesian_prefix'] = self._cartesian_partial
+        if getattr(self, '_release_height_recovery', None):
+            self._last_boundary['release_height_recovery'] = self._release_height_recovery
+        if getattr(self, '_last_ik_attempts', None):
+            self._last_boundary['ik_attempts'] = self._last_ik_attempts
         if self._occupancy is not None:
             from luggage_planning.occupancy_place_paths import (
                 occupancy_collision_boxes)
@@ -404,6 +408,8 @@ class MotionExecutor:
         self._cartesian_excursion = None
         self._cartesian_recovery = []
         self._cartesian_partial = None
+        self._release_height_recovery = []
+        self._last_ik_attempts = []
         self._start_joints = list(current_joints or [])
         try:
             result = self._execute_segment_inner(
@@ -421,6 +427,13 @@ class MotionExecutor:
             return self._run_joint_goal(
                 list(HOME_JOINTS_RAD), feedback_cb, execute_timeout,
                 'commissioning photographed home', seed_joints=current_joints,
+                segment_msg=segment_msg)
+        from luggage_planning.manual_carry_transfer import TRANSFER_TYPES, TRANSFER_JOINTS_RAD
+        if seg_type in TRANSFER_TYPES:
+            index = TRANSFER_TYPES.index(seg_type)
+            return self._run_joint_goal(
+                list(TRANSFER_JOINTS_RAD[index]), feedback_cb, execute_timeout,
+                'sealed carry P%d' % (index + 1), seed_joints=current_joints,
                 segment_msg=segment_msg)
         if seg_type == "pose_target":
             return self._run_pose_target(segment_msg, feedback_cb,
@@ -442,8 +455,13 @@ class MotionExecutor:
                 # geometry, including routes whose legacy fallback flag is
                 # false. Never execute a partial prefix or skip route poses.
                 from luggage_planning.cartesian_recovery import replan_complete_route
-                return replan_complete_route(self, segment_msg, feedback_cb,
-                                             execute_timeout, current_joints, fraction, plan)
+                fallback = replan_complete_route(self, segment_msg, feedback_cb,
+                                                execute_timeout, current_joints, fraction, plan)
+                if segment_msg.name == 'place_descend' and not fallback.success:
+                    from luggage_planning.release_height_recovery import recover_release_height
+                    return recover_release_height(self, segment_msg, feedback_cb,
+                                                  execute_timeout, fallback)
+                return fallback
             need_fallback = occupancy_blocked or wrist_singular
             if need_fallback:
                 if str(segment_msg.name).startswith('return_pick_stop_'):
@@ -586,6 +604,8 @@ class MotionExecutor:
         self._planned_traj = None
         self._cartesian_recovery = []
         self._cartesian_partial = None
+        self._release_height_recovery = []
+        self._last_ik_attempts = []
         self._start_joints = list(current_joints or [])
         if current_joints and len(current_joints) == len(JOINTS):
             wrapped = [
@@ -642,6 +662,7 @@ class MotionExecutor:
         joint1 (limits are ±6.28) and the controller times out 4 rad away.
         """
         self._last_ik_code = 0
+        self._last_ik_attempts = []
         if not self._ik.wait_for_service(timeout_sec=2.0):
             self._last_ik_code = -1
             return None
@@ -650,22 +671,28 @@ class MotionExecutor:
         request.ik_request.ik_link_name = self._link
         request.ik_request.avoid_collisions = True
         request.ik_request.robot_state.is_diff = True
-        if current_joints and len(current_joints) == len(JOINTS):
-            request.ik_request.robot_state.joint_state.name = list(JOINTS)
-            request.ik_request.robot_state.joint_state.position = [
-                float(v) for v in current_joints]
-        request.ik_request.timeout = DurationMsg(sec=1, nanosec=0)
+        from luggage_planning.ik_search import nearby_ik_seeds, IK_ATTEMPT_TIMEOUT_SEC
+        request.ik_request.timeout = DurationMsg(sec=IK_ATTEMPT_TIMEOUT_SEC, nanosec=0)
         stamped = PoseStamped()
         stamped.header.frame_id = self._frame
         stamped.pose = pose
         request.ik_request.pose_stamped = stamped
-        future = self._ik.call_async(request)
-        response = self._wait_future(future, 3.0)
-        if response is None:
-            self._last_ik_code = -1
-            return None
-        self._last_ik_code = int(response.error_code.val)
-        if response.error_code.val != MoveItErrorCodes.SUCCESS:
+        response = None
+        for seed in nearby_ik_seeds(current_joints):
+            cancel = getattr(self, '_cancel_check', None)
+            if cancel is not None and cancel():
+                self._last_ik_code = -7  # PREEMPTED: no further solver requests.
+                return None
+            if seed is not None:
+                request.ik_request.robot_state.joint_state.name = list(JOINTS)
+                request.ik_request.robot_state.joint_state.position = list(seed)
+            response = self._wait_future(self._ik.call_async(request), IK_ATTEMPT_TIMEOUT_SEC+2.)
+            self._last_ik_code = int(response.error_code.val) if response is not None else -1
+            self._last_ik_attempts.append(dict(seed=seed, error_code=self._last_ik_code,
+                                              timeout_sec=IK_ATTEMPT_TIMEOUT_SEC))
+            if self._last_ik_code != -31:
+                break  # Retry solver exhaustion only, not transport/state errors.
+        if response is None or self._last_ik_code != MoveItErrorCodes.SUCCESS:
             return None
         by_name = dict(zip(
             response.solution.joint_state.name,

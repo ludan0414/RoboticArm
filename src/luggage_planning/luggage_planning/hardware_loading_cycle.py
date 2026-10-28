@@ -90,11 +90,30 @@ class LoadingCycle:
             self.ports.record(dict(event="stage", stage=stage, index=self.index))
             self.stage = stage
 
+    def restore_progress(self, checkpoint):
+        """Restore policy cursor only. Startup never performs robot effects."""
+        phase = checkpoint['phase']
+        if phase == 'IDLE':
+            return
+        index = checkpoint['box_index'] + (1 if phase=='DONE' else 0)
+        if not 0 <= index <= self.count:
+            raise ValueError('recovery box index outside current policy')
+        with self.lock:
+            self.index = index
+            self.start_box = checkpoint.get('start_box', self.start_box)
+            self.return_pending = phase=='RETURN_PENDING'
+            pending = phase not in ('DONE', 'ABORTED')
+            self.state = 'FAULT' if pending else ('COMPLETE' if index==self.count else 'WAIT_START')
+            self.stage = 'RECOVERY_AVAILABLE' if pending else self.state
+            self.error = checkpoint.get('error','') or ('interrupted box: resume or explicit reset required' if pending else '')
+            self.request_id = uuid.uuid4().hex if self.state!='COMPLETE' else ''
+
     def submit(self, command, request_id, schema_version, scene_confirmed):
         with self.lock:
             expected = (("reset", "recover") if self.state == "FAULT" or self.return_pending else
                         ("initialize", "skip_initialize", "axis_test", "reset", "recover") if self.state == "WAIT_START"
                         else ("pick", "axis_test", "reset", "recover"))
+            expected += ('carry_home', 'resume')
             if (self.state not in ("WAIT_START", "WAIT_PICKUP_READY", "FAULT")
                     or command not in expected or request_id != self.request_id
                     or type(schema_version) is not int or schema_version != 1
@@ -108,7 +127,8 @@ class LoadingCycle:
             self.state = "BUSY"
             self.stage = {"initialize": "INITIALIZING", "skip_initialize": "CHECK_CURRENT",
                           "pick": "OBSERVE", "axis_test": "AXIS_TEST", "reset": "RESETTING",
-                          "recover": "RECOVERING_CONTROLLER"}[command]
+                          "recover": "RECOVERING_CONTROLLER", 'carry_home':'HELD_RETURN',
+                          'resume':'RESUMING_BOX'}[command]
             self.request_id = ""
             self.worker = threading.Thread(target=self._run, args=(command, previous_state), daemon=True)
             self.worker.start()
@@ -126,8 +146,13 @@ class LoadingCycle:
                 self.ports.reset_observe()
             elif command == "recover":
                 self.ports.recover_controller()
+            elif command == 'carry_home':
+                self.ports.carry_home()
             else:
-                self.ports.pick_place(self.index)
+                if command == 'resume':
+                    self.ports.resume_place(self.index)
+                else:
+                    self.ports.pick_place(self.index)
                 self.return_pending = True
                 self.stage_changed("EXIT_AND_RETURN")
                 self.ports.return_observe(self.index)
@@ -135,10 +160,12 @@ class LoadingCycle:
                 self.ports.record(dict(event="completed", command=command,
                                        index=self.index))
                 self.error = ""
-                if command == "pick" or (command == "reset" and self.return_pending):
+                if command in ('pick','resume') or (command == "reset" and self.return_pending):
                     self.index += 1
                     self.return_pending = False
-                if command == "recover":
+                if command == 'carry_home':
+                    self.state, self.stage = 'FAULT', 'HELD_AT_HOME'
+                elif command == "recover":
                     # Stopping is not a successful return or placement. Require
                     # a new initialization (or reset if return_pending) next.
                     self.state = "WAIT_START"

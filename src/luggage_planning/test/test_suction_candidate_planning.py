@@ -609,9 +609,20 @@ class TestWiring(unittest.TestCase):
         self.assertIn("observation_identity_consistent", source)
 
     def test_executor_honours_required_fraction(self):
-        source = self._source(os.path.join(
-            "luggage_planning", "motion_executor.py"))
-        self.assertIn("required_cartesian_fraction", source)
+        # A partial Cartesian prefix must never be sent as a completed pick.
+        from types import SimpleNamespace as NS
+        from test_place_cartesian_recovery import executor_type
+        executor = executor_type()()
+        executor._plan_cartesian = lambda *args: (.8, NS())
+        executor._notify = lambda *args: None
+        executor._result = lambda ok, message, fraction=0: NS(success=ok, message=message, fraction=fraction)
+        executor._run_pose_target = lambda *args: NS(success=False, message='full goal blocked')
+        executor._execute_trajectory = lambda *args: self.fail('partial path executed')
+        segment = NS(name='pick_approach', type='cartesian', target_pose=NS(),
+                     waypoints=[], allow_ompl_fallback=False,
+                     required_cartesian_fraction=1.)
+        result = executor._execute_segment_inner(segment, None, 45., [0.]*6)
+        self.assertFalse(result.success)
 
 
 class TestArchitectureIsolation(unittest.TestCase):

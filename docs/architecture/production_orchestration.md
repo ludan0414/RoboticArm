@@ -38,6 +38,11 @@ confirmed return, including after controller-only recovery.
 Commissioning placement derives the box/tool transform from detected box pose
 and fresh actual tool TF at sealed contact. Carry routing and clearance share
 that transform; carrying joint paths must not have J6 overwritten afterward.
+At this site, a completed pick retreat is followed by the photographed P1
+then P2 joint targets for every box. Both are planned with the attached box;
+placement is generated only after P2 settles and a fresh tool TF is read.
+Transfer progress is checkpointed before release. A failed transfer retains
+vacuum and resumes at the unfinished target, never at a place segment.
 The final near-target route may lower before full extension, but still requires
 complete live collision-checked planning. Before release, a fresh tool TF must
 imply box pose within 1cm and 2 degrees of the requested target under the rigid

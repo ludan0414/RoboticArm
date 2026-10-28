@@ -201,6 +201,10 @@ class AdapterTests(unittest.TestCase):
         expected=driver._effective_place_target.box_pose.orientation
         self.assertEqual(proxies[0][2],[expected.x,expected.y,expected.z,expected.w])
         self.assertEqual(proxies[0][3],[.59,.37,.24])
+        # The elevated release is transient; settled cargo must not float
+        # 5mm above its configured support and block the next stack layer.
+        self.assertAlmostEqual(driver._effective_place_target.box_pose.position.z,.655)
+        self.assertEqual(proxies[0][1],[-1,.5,.65])
 
     def test_breadcrumb_records_actual_pick_stop_and_excludes_descent(self):
         driver=self.module.CommissioningDriver()

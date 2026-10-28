@@ -226,6 +226,11 @@ class PickSession:
                 return self._result(EXIT_BUILD_SCENE)
             ok, message = self._ports.set_pickup_touch(True)
             self._emit("io", "set_pickup_touch", ok=ok, message=message)
+            if not ok:
+                self._feed(RetryEvent(
+                    RetryEventType.REQUEST_REJECTED,
+                    reason_code="SCENE_TOUCH_FAILED", detail=message))
+                return self._result(EXIT_BUILD_SCENE)
 
         self._feed(RetryEvent(
             RetryEventType.REQUEST_START, t=self._request_started,

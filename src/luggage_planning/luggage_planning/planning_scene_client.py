@@ -41,14 +41,13 @@ from .suction_candidate_waypoints import quat_mul,quat_rotate
 
 BOX_OBJECT_ID = "pickup_box"
 DEFAULT_ATTACH_LINK = "suction_contact_frame"
-# Links allowed to touch the attached box (panel assembly + base links the
-# box may sweep past during attach). ROS 1 scene_manager used the same set.
+# Only the suction hardware may touch the carried box. Allowing arm links 5/6
+# hid exactly the payload-vs-arm contact that this transfer must reject.
 DEFAULT_TOUCH_LINKS = (
     "suction_panel",
     "suction_contact_frame",
-    "elfin_link6",
-    "elfin_link5",
 )
+ARM_LINKS_NEVER_TOUCH_PAYLOAD = ("elfin_link5", "elfin_link6")
 
 
 def build_box_primitive(box_size):

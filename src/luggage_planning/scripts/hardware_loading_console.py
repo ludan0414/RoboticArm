@@ -22,6 +22,9 @@ from luggage_planning.hardware_loading_cycle import LoadingCycle, parse_profile,
 from luggage_planning.pose import MotionSegment
 from luggage_planning.release_confirmation import wait_for_release
 from luggage_planning.commissioning_home import HOME_JOINTS_DEG, HOME_SEGMENT_TYPE
+from luggage_planning.manual_carry_transfer import (
+    TRANSFER_TYPES, execute_transfer, transfer_segments,
+)
 from luggage_planning.placement_approach import lower_final_approach
 from luggage_planning.placement_payload import release_above_support
 from luggage_planning.cuboid_heading import nearest_cuboid_heading
@@ -29,6 +32,7 @@ from luggage_planning.doorway_motion import DoorwayMotionGuard
 from luggage_planning.pick_return_path import PickReturnPath
 from luggage_planning.continuous_motion import continuous_carry
 from luggage_planning.loading_speed import LoadingSpeed
+from luggage_planning.recovery_checkpoint import RecoveryCheckpoint
 from luggage_planning.hardware_motion_guard import (HardwareMotionGuard, axis_test_segments,
                                                     quaternion_angle)
 from luggage_planning.pose import Point, Pose, Quaternion
@@ -138,6 +142,9 @@ pre{white-space:pre-wrap;font-size:13px}
 <p><button id="recover" disabled>停止并恢复待机（不松吸、不回位）</button></p>
 <p id="recover-result"></p>
 <p><button id="reset" disabled>松吸掉箱并回位（保留箱序）</button></p>
+<p><button id="carry-home" disabled>携箱回初始位（保持吸附）</button>
+<button id="resume" disabled>继续中断的当前箱</button></p>
+<p id="recovery-progress"></p>
 <p id="reset-target"></p>
 <p>掉箱复位会停止机械臂、关闭吸盘，允许当前箱子掉落，确认松吸后再规划回位。请确认掉落区域和回位路径。掉落箱体位置未测量；复位不清除舱内占位，也不猜测本箱放置成功。</p>
 <h2 id="next-box"></h2>
@@ -152,11 +159,14 @@ let current=null, pending=false;
 const speedInput=document.getElementById('speed'), speedButton=document.getElementById('apply-speed');
 speedInput.oninput=()=>{document.getElementById('speed-label').textContent=speedInput.value+'%';};
 const ack=document.getElementById('ack'), a=document.getElementById('start'), s=document.getElementById('skip'), b=document.getElementById('pick'), t=document.getElementById('axes'), r=document.getElementById('reset'), restore=document.getElementById('recover');
-function enable(){a.disabled=s.disabled=pending||!ack.checked||current?.state!=='WAIT_START'||current?.return_pending;b.disabled=pending||!ack.checked||current?.state!=='WAIT_PICKUP_READY'||current?.return_pending;t.disabled=pending||!ack.checked||current?.return_pending||!['WAIT_START','WAIT_PICKUP_READY'].includes(current?.state);r.disabled=restore.disabled=pending||!ack.checked||!['WAIT_START','WAIT_PICKUP_READY','FAULT'].includes(current?.state);speedInput.disabled=speedButton.disabled=pending||!['WAIT_START','WAIT_PICKUP_READY','FAULT'].includes(current?.state);}
+const heldHome=document.getElementById('carry-home'), resume=document.getElementById('resume');
+function enable(){a.disabled=s.disabled=pending||!ack.checked||current?.state!=='WAIT_START'||current?.return_pending;b.disabled=pending||!ack.checked||current?.state!=='WAIT_PICKUP_READY'||current?.return_pending||current?.recovery?.available;t.disabled=pending||!ack.checked||current?.return_pending||!['WAIT_START','WAIT_PICKUP_READY'].includes(current?.state);r.disabled=restore.disabled=pending||!ack.checked||!['WAIT_START','WAIT_PICKUP_READY','FAULT'].includes(current?.state);heldHome.disabled=resume.disabled=pending||!ack.checked||!current?.recovery?.available||!['WAIT_START','WAIT_PICKUP_READY','FAULT'].includes(current?.state);speedInput.disabled=speedButton.disabled=pending||!['WAIT_START','WAIT_PICKUP_READY','FAULT'].includes(current?.state);}
 function txt(id,v){document.getElementById(id).textContent=v==null||v===''?'—':String(v);}
 function paint(id,sev){document.getElementById(id).className='card '+(sev||'unknown');}
 function ago(mono,now){if(!mono)return '—';const d=now-mono;if(d<0)return '0.0s';return d.toFixed(1)+'s 前';}
 function render(){
+  const progress=current.recovery||{};
+  txt('recovery-progress',progress.available?('可恢复：第'+progress.box+'箱 · '+progress.phase+' · 下一段 '+progress.next_segment+' · '+progress.checkpoint):'没有未完成的持箱任务');
   const rec=current.recording||{};
   txt('recording-status',rec.error?('录制错误：'+rec.error):
       ('连续录制：'+(rec.path||'等待启动')+
@@ -210,8 +220,9 @@ function render(){
   document.getElementById('event-log').innerHTML=rows.length?rows.map(e=>'<tr class="'+ (e.severity||'')+'"><td>'+ago(e.monotonic_sec,now)+'</td><td>'+ (e.name||'')+'</td><td>'+ (e.code==null?'':e.code)+'</td><td>'+ (e.hint||e.message||'')+(e.index==null?'':' #'+e.index)+'</td></tr>').join(''):'<tr><td colspan="4">尚无 Init/Start/40071/40025 记录</td></tr>';
   document.getElementById('status').textContent=JSON.stringify(current,null,2);
 }
-async function refresh(){try{current=await(await fetch('/status')).json();render();enable();}catch(e){a.disabled=s.disabled=b.disabled=t.disabled=r.disabled=restore.disabled=speedInput.disabled=speedButton.disabled=true;}}
+async function refresh(){try{current=await(await fetch('/status')).json();render();enable();}catch(e){a.disabled=s.disabled=b.disabled=t.disabled=r.disabled=restore.disabled=heldHome.disabled=resume.disabled=speedInput.disabled=speedButton.disabled=true;}}
 async function send(command){pending=true;enable();try{const r=await fetch('/command',{method:'POST',headers:{'Content-Type':'application/json','X-Console-Token':'TOKEN'},body:JSON.stringify({command,percent:Number(speedInput.value),request_id:current.request_id,schema_version:1,scene_confirmed:ack.checked})});if(!r.ok)throw Error(await r.text());if(command!=='set_speed')ack.checked=false;document.getElementById('page-error').textContent='';}catch(e){document.getElementById('page-error').textContent=e.message;}finally{pending=false;await refresh();}}
+heldHome.onclick=()=>send('carry_home');resume.onclick=()=>send('resume');
 speedButton.onclick=()=>send('set_speed');
 a.onclick=()=>send('initialize');s.onclick=()=>send('skip_initialize');b.onclick=()=>send('pick');t.onclick=()=>send('axis_test');r.onclick=()=>send('reset');restore.onclick=()=>send('recover');ack.onchange=enable;setInterval(refresh,400);refresh();
 </script>"""
@@ -241,12 +252,26 @@ class CommissioningDriver(HardwarePickDriver):
 
     def record_completed_motion(self, segment):
         if not (segment.name == 'pick_retreat' or segment.name == 'pre_place'
+                or segment.type in TRANSFER_TYPES
                 or segment.name.startswith(('ground_entry_', 'place_pickup_connect_', 'place_via_'))):
             return
         if not hasattr(self, '_pick_return_path'):
             self._pick_return_path = PickReturnPath()
         pose = self.lookup_pose('world', 'suction_contact_frame', fresh=True)
         self._pick_return_path.record(segment.name, pose, segment.waypoints)
+
+    def transfer_after_pick(self, ports, start=0):
+        """Move the attached box P1 -> P2 before resolving placement from TF."""
+        self._doorway_carrying = True
+        self._carry_entry = None
+        recovery = getattr(self, 'recovery', None)
+        segments = transfer_segments()
+        if recovery is not None and start == 0:
+            recovery.begin_transfer(segments)
+        def checkpoint(next_segment):
+            if recovery is not None:
+                recovery.transfer_progress(next_segment)
+        return execute_transfer(ports, segments, start, checkpoint)
     def attach_scene_box(self):
         """Freeze actual sealed-contact TF before the successful pick retreat."""
         from luggage_planning.policy_place import measured_grasp_transform
@@ -265,6 +290,9 @@ class CommissioningDriver(HardwarePickDriver):
                 collision_box_size_m=size, geometry_source='configured_cycle',
                 tool_pose=dict(position=vars(tool.position), orientation=vars(tool.orientation)),
                 offset_box_m=grasp[0], relative_orientation=vars(grasp[1]))
+            recovery = getattr(self, 'recovery', None)
+            if recovery is not None:
+                recovery.sealed()
         return ok, message
 
     def validate_place_pose(self):
@@ -336,9 +364,13 @@ class CommissioningDriver(HardwarePickDriver):
         if detection is not None and candidate is not None:
             if grasp is None:
                 raise RuntimeError("actual sealed-contact TF missing; refusing nominal grasp placement")
-            target = release_above_support(self._args.place_target_data)
+            target = self._args.place_target_data
             target,self._cuboid_heading_report=nearest_cuboid_heading(
                 target,box_pose_from_grasp(actual,grasp))
+            # Expected cargo settles onto its configured support after suction
+            # opens. Never leave its obstacle at the elevated release pose.
+            self._settled_box_pose = target.box_pose
+            target = release_above_support(target)
             self._effective_place_target = target
             self.get_logger().info('cuboid heading: '+json.dumps(self._cuboid_heading_report))
             self.get_logger().info('placement payload height: configured=%s reference=%s target=%s' % (
@@ -347,9 +379,19 @@ class CommissioningDriver(HardwarePickDriver):
             target,doorway_report=self.doorway_guard.align_target(target,detection.box_size,
                 self.lookup_pose('world','container_link'))
             self.get_logger().info('doorway clearance: '+json.dumps(doorway_report))
+            doorway_entry = getattr(self, 'doorway_entry', None)
+            if doorway_entry is not None:
+                target, entry_report = doorway_entry.build(target, detection.box_size,
+                    self.lookup_pose('world','container_link'),
+                    getattr(self, '_prior_place_targets', ()))
+                self._doorway_entry_strategy = entry_report['strategy']
+                self.get_logger().info('centred doorway entry: '+json.dumps(entry_report))
             segments = build_place_segments(target, detection, candidate, measured_grasp=grasp)
             self._doorway_carrying=True
-        config = getattr(self, "carry_entry_config", None)
+        # P2 is the actual measured start of the placement route. The former
+        # pedestal/high-lift connector would move away from the taught path.
+        self._carry_entry = None
+        config = None if detection is not None and candidate is not None else getattr(self, "carry_entry_config", None)
         if config is not None:
             from luggage_planning.carry_entry import CarryEntry
             if detection is None or candidate is None:
@@ -358,7 +400,11 @@ class CommissioningDriver(HardwarePickDriver):
             segments = self._carry_entry.connect(actual, segments)
         else:
             segments = connect_place_from_pose(actual, segments)
-        return continuous_carry(segments)
+        segments = continuous_carry(segments)
+        recovery = getattr(self, 'recovery', None)
+        if recovery is not None:
+            recovery.begin_place(segments)
+        return segments
 
     def set_motion_speed(self, scale):
         """Set/read planning tempo so MoveIt sees the actual slowed duration."""
@@ -406,8 +452,8 @@ class CommissioningDriver(HardwarePickDriver):
         ok,message=self.ensure_doorway_clearance()
         if not ok:
             return ok,message
-        if segment.type == HOME_SEGMENT_TYPE:
-            return True, 'fixed joint home: MoveIt validates joint-space path'
+        if segment.type == HOME_SEGMENT_TYPE or segment.type in TRANSFER_TYPES:
+            return True, 'fixed joint target: MoveIt validates the attached-payload path'
         actual = self.lookup_pose("world", "suction_contact_frame", fresh=True)
         entry = getattr(self, "_carry_entry", None)
         for target in [*segment.waypoints, segment.target_pose]:
@@ -435,7 +481,10 @@ class CommissioningDriver(HardwarePickDriver):
         ok, message = super().remove_scene_box()
         if not ok or geometry is None:
             return False, message or "missing measured payload geometry"
-        target = getattr(self, '_effective_place_target', self._args.place_target_data).box_pose
+        return self.add_expected_placed_box(geometry[2])
+
+    def add_expected_placed_box(self, size):
+        target = getattr(self, '_settled_box_pose', self._args.place_target_data.box_pose)
         # This is an EXPECTED placement, never a measured cargo-map commit.
         scene = self._scene_client()
         # Only suction contact links may initially touch the released proxy.
@@ -444,11 +493,15 @@ class CommissioningDriver(HardwarePickDriver):
             [(self.placed_proxy_id, link) for link in self.release_touch_links], True)
         if not ok:
             return ok, message
-        return scene.add_collision_box(
+        ok, message = scene.add_collision_box(
             self.placed_proxy_id,
             [target.position.x, target.position.y, target.position.z],
             [target.orientation.x, target.orientation.y,
-             target.orientation.z, target.orientation.w], geometry[2])
+             target.orientation.z, target.orientation.w], size)
+        recovery = getattr(self, 'recovery', None)
+        if ok and recovery is not None:
+            recovery.note_placed(self.placed_proxy_id, target, size)
+        return ok, message
 
 
 class HardwarePorts:
@@ -458,6 +511,9 @@ class HardwarePorts:
 
     def record(self, event):
         record = {"time": time.time(), "session": self.session, **event}
+        recovery = getattr(self.driver, 'recovery', None)
+        if event.get('event') == 'fault' and recovery is not None and recovery.store.pending:
+            recovery.store.update(error=event.get('error',''))
         recorder = getattr(self.driver, 'telemetry_recorder', None)
         if recorder is not None:
             recorder.write('console', record)
@@ -547,6 +603,12 @@ class HardwarePorts:
             ports.close()
         self.prepare()
         self.record(dict(event="reset_complete", target_joints_deg=HOME_JOINTS_DEG))
+        recovery = getattr(self.driver, 'recovery', None)
+        if recovery is not None:
+            # A completed placement whose empty return failed is already
+            # consumed; dropping a held box leaves that same index retryable.
+            phase = 'DONE' if recovery.store.snapshot()['phase']=='RETURN_PENDING' else 'ABORTED'
+            recovery.store.update(phase=phase, error='operator drop/reset')
 
     def prepare(self):
         self.prepare_current()
@@ -572,6 +634,9 @@ class HardwarePorts:
 
     def prepare_current(self):
         """Readiness checks only: no observe move, detection or vacuum command."""
+        recovery = getattr(self.driver, 'recovery', None)
+        if recovery is not None:
+            recovery.restore_placed()
         ready, reason = self.driver.wait_graph()
         if not ready:
             raise RuntimeError(reason)
@@ -588,6 +653,7 @@ class HardwarePorts:
         self.driver.validate_scene_frame()
         self.execute([])  # A held box or unknown vacuum state blocks a new pick.
         self.driver._args.place_target_data = self.cycles[index][0]
+        self.driver._prior_place_targets = tuple(target for target, _ in self.cycles[:index])
         self.driver._configured_payload_size = self.cycles[index][0].reference_box_size_m
         if not self.driver._configured_payload_size:
             raise RuntimeError('cycle needs expected_demo_input_dims_m for configured collision geometry')
@@ -596,10 +662,16 @@ class HardwarePorts:
             del self.driver._effective_place_target
         self.driver._measured_grasp = None
         self.driver._last_place_reason = ''
+        self.driver._doorway_entry_strategy = ''
+        if hasattr(self.driver, '_settled_box_pose'):
+            del self.driver._settled_box_pose
         self.driver._doorway_carrying=False
         self.driver.placed_proxy_id = "expected_placed_%s_%d" % (self.session, index)
         # Separate trace per absolute box number; retries overwrite that box's trace.
         self.driver._args.trace_out = "%s.box%03d.jsonl" % (self.journal.name, index + 1)
+        recovery = getattr(self.driver, 'recovery', None)
+        if recovery is not None:
+            recovery.store.begin_pick(index)
         code = self.driver.run()
         if code != 0:
             reason = self.driver._last_place_reason or 'see box trace for pick failure'
@@ -613,12 +685,23 @@ class HardwarePorts:
     def return_observe(self, index):
         # Automatic return and explicit drop/reset share the photographed joint home.
         self.prepare()
+        recovery = getattr(self.driver, 'recovery', None)
+        if recovery is not None:
+            recovery.store.update(phase='DONE', error='')
+
+    def carry_home(self):
+        self.driver.recovery.carry_home()
+
+    def resume_place(self, index):
+        self.driver.recovery.resume_place(index)
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--site-profile", required=True)
     parser.add_argument("--journal", required=True, help="JSONL session file; existing file is overwritten")
+    parser.add_argument('--recovery-file', help='Durable checkpoint; default <journal>.checkpoint.json')
+    parser.add_argument('--new-cycle', action='store_true', help='Start a new completed/aborted cycle; unfinished carry cannot be discarded')
     parser.add_argument("--start-box", type=int, default=1,
                         help="start at this configured box number (1-based; default: 1)")
     parser.add_argument("--port", type=int, default=8765)
@@ -644,6 +727,14 @@ def main(argv=None):
     args.skip_observe = True  # Initialization/return use the fixed joint home via MoveIt.
     args.place_target_data = None
     token, session = secrets.token_hex(32), secrets.token_hex(8)
+    store = RecoveryCheckpoint(cli.recovery_file or (cli.journal+'.checkpoint.json'),
+                               hashlib.sha256(raw_profile).hexdigest())
+    if cli.new_cycle:
+        if store.pending:
+            raise ValueError('unfinished box: recover/reset before starting a new cycle')
+        store.update(phase='IDLE', placed=[], context={}, segments=[], next_segment=0)
+    if store.snapshot()['phase']=='IDLE':
+        store.update(start_box=cli.start_box, box_index=cli.start_box-1)
     journal = open(cli.journal, "w", encoding="utf-8")
     rclpy.init()
     driver = CommissioningDriver(args)
@@ -653,14 +744,19 @@ def main(argv=None):
     driver.motion_guard = motion_guard
     driver.doorway_guard = doorway_guard
     driver.carry_entry_config = carry_config
+    from luggage_planning.doorway_entry import CenteredDoorwayEntry
+    driver.doorway_entry = CenteredDoorwayEntry(doorway_guard.geometry, carry_config)
     driver.segment_guard = driver.guard_segment
     driver.detection_guard = driver.guard_detection
     from luggage_planning.recording_ros import attach_recorder
     driver.telemetry_recorder = attach_recorder(driver, cli.journal, session)
     ports = HardwarePorts(driver, observe, cycles, journal, session)
+    from luggage_planning.hardware_recovery import HardwareRecovery
+    driver.recovery = HardwareRecovery(ports, store, RosPickSessionPorts)
     ports.record(dict(event="session", profile_sha256=hashlib.sha256(raw_profile).hexdigest(),
                       profile=json.loads(raw_profile), session=session, start_box=cli.start_box))
     cycle = LoadingCycle(ports, len(cycles), start_box=cli.start_box)
+    cycle.restore_progress(store.snapshot())
     speed = LoadingSpeed(cycle, driver.set_motion_speed)
     driver.stage_callback = cycle.stage_changed
     driver._console_hardware = {"available": False}
@@ -685,6 +781,14 @@ def main(argv=None):
     qos = _latched_qos()
     driver.create_subscription(String, HARDWARE_STATUS_TOPIC, _on_hardware, qos)
     driver.create_subscription(String, EVENTS_TOPIC, _on_executor_event, qos)
+    def _on_recovery_io(msg):
+        try:
+            io = json.loads(msg.data)
+            if isinstance(io, dict) and all(key in io for key in ('DI0','DO0','DO1')):
+                driver._recovery_io, driver._recovery_io_received_at = io, time.monotonic()
+        except (TypeError, ValueError):
+            pass
+    driver.create_subscription(String, '/vacuum/io', _on_recovery_io, 10)
     executor = MultiThreadedExecutor(num_threads=4)
     executor.add_node(driver)
     spin = threading.Thread(target=executor.spin, daemon=True)
@@ -711,6 +815,7 @@ def main(argv=None):
                 snapshot = cycle.snapshot()
                 snapshot['speed'] = speed.snapshot()
                 snapshot['recording'] = driver.telemetry_recorder.status()
+                snapshot['recovery'] = driver.recovery.snapshot()
                 snapshot["reset_target"] = dict(type=HOME_SEGMENT_TYPE,
                                                 joints_deg=HOME_JOINTS_DEG)
                 profile = json.loads(raw_profile)

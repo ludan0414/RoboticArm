@@ -177,17 +177,24 @@ def run_place(ports, segments, use_scene=True, low_hold_sec=0.5,
     def log(stage, **fields):
         ports.log_event(dict(stage=stage, **fields))
 
+    def checkpoint(phase, next_segment):
+        callback = getattr(ports, 'place_checkpoint', None)
+        if callback is not None:
+            callback(phase, next_segment)
+
     release_started = False
     try:
-        for segment in segments[:-1]:
+        for ordinal, segment in enumerate(segments[:-1]):
             healthy, reason = ports.graph_health()
             if not healthy or ports.di0() != 1:
                 log("place_carry_fault", reason=reason)
                 return 10, "PLACE_CARRY_FAULT: %s / DI0" % reason
+            checkpoint('CARRYING', ordinal)
             outcome = ports.execute_segment(segment, "place")
             log(segment.name, ok=outcome.ok, message=outcome.message)
             if not outcome.ok:
                 return 10, "PLACE_CARRY_FAULT [%s]: %s" % (segment.name, outcome.message)
+            checkpoint('CARRYING', ordinal+1)
         if ports.di0() != 1:
             return 10, "PLACE_CARRY_FAULT: DI0 lost before release"
         validate_pose = getattr(ports, "validate_place_pose", None)
@@ -196,6 +203,7 @@ def run_place(ports, segments, use_scene=True, low_hold_sec=0.5,
             log("place_pose_check", ok=ok, message=reason)
             if not ok:
                 return 10, "PLACE_POSE_NOT_ALIGNED: " + reason
+        checkpoint('RELEASE_REQUESTED', len(segments)-1)
         release_started = True
         ok, reason = ports.vacuum_release("place")
         log("place_release", ok=ok, message=reason)
@@ -214,12 +222,16 @@ def run_place(ports, segments, use_scene=True, low_hold_sec=0.5,
             ports.sleep(0.05)
         else:
             return 11, "PLACE_RELEASE_UNCONFIRMED"
+        checkpoint('RELEASE_CONFIRMED', len(segments)-1)
         if use_scene:
             ok, reason = ports.scene_remove()
             if not ok:
                 return 11, "PLACE_SCENE_DETACH_FAILED: %s" % reason
+        checkpoint('PLACED', len(segments)-1)
         outcome = ports.execute_segment(segments[-1], "place")
         log("place_retreat", ok=outcome.ok, message=outcome.message)
+        if outcome.ok:
+            checkpoint('RETURN_PENDING', len(segments))
         return (0, "PLACE_COMPLETE") if outcome.ok else (
             11, "PLACE_RETREAT_FAILED: %s" % outcome.message)
     except Exception as exc:

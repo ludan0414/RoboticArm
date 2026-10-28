@@ -11,7 +11,7 @@ class PickReturnPath:
     def record(self, name, pose, waypoints=()):
         if name == 'pick_retreat':
             self.poses = [deepcopy(pose)]
-        elif self.poses and (name.startswith(('ground_entry_', 'place_pickup_connect_', 'place_via_'))
+        elif self.poses and (name.startswith(('ground_entry_', 'place_pickup_connect_', 'place_via_', 'carry_p'))
                             or name == 'pre_place'):
             self.poses.extend(deepcopy(list(waypoints)))
             self.poses.append(deepcopy(pose))

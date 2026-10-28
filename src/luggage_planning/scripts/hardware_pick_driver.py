@@ -167,6 +167,10 @@ class RosPickSessionPorts:
         if segment.type == 'commissioning_home':
             from luggage_planning.commissioning_home import HOME_JOINTS_DEG
             event.update(target=None, orientation=None, target_joints_deg=HOME_JOINTS_DEG)
+        from luggage_planning.manual_carry_transfer import TRANSFER_TYPES, TRANSFER_JOINTS_DEG
+        if segment.type in TRANSFER_TYPES:
+            event.update(target=None, orientation=None,
+                         target_joints_deg=TRANSFER_JOINTS_DEG[TRANSFER_TYPES.index(segment.type)])
         self.log_event(event)
         observer = getattr(self._driver, "record_completed_motion", None)
         if ok and observer is not None:
@@ -184,6 +188,11 @@ class RosPickSessionPorts:
 
     def vacuum_release(self, candidate_id=""):
         return self._driver.vacuum(False)
+
+    def place_checkpoint(self, phase, next_segment):
+        recovery = getattr(self._driver, 'recovery', None)
+        if recovery is not None:
+            recovery.progress(phase, next_segment)
 
     def validate_place_pose(self):
         check = getattr(self._driver, "validate_place_pose", None)
@@ -510,10 +519,18 @@ class HardwarePickDriver(Node):
         from luggage_planning.planning_scene_client import (
             BOX_OBJECT_ID,
             DEFAULT_TOUCH_LINKS,
+            ARM_LINKS_NEVER_TOUCH_PAYLOAD,
         )
         pairs = [(BOX_OBJECT_ID, link) for link in DEFAULT_TOUCH_LINKS]
-        return self._scene_client().set_acm_pairs(
-            pairs, bool(allowed), verify=False)
+        scene = self._scene_client()
+        ok, message = scene.set_acm_pairs(pairs, bool(allowed), verify=False)
+        if not ok:
+            return ok, message
+        # Earlier sessions allowed payload contact with arm links 5/6. Clear
+        # those stale ACM entries before every attachment, even in a reused
+        # MoveIt scene, so the new carried-box path is actually checked.
+        arm_pairs = [(BOX_OBJECT_ID, link) for link in ARM_LINKS_NEVER_TOUCH_PAYLOAD]
+        return scene.set_acm_pairs(arm_pairs, False, verify=False)
 
     def attach_scene_box(self):
         if self._scene_box is None:
@@ -733,6 +750,11 @@ class HardwarePickDriver(Node):
                     return 10
                 selected = next((c for c in detection.candidates
                                  if c.candidate_id == result.selected_candidate_id), None)
+                ok, reason = self.transfer_after_pick(ports)
+                if not ok:
+                    self._last_place_reason = reason
+                    self.get_logger().error('place session: exit=10 reason=%s' % reason)
+                    return 10
                 segments = self.prepare_place_segments(segments, detection, selected)
                 heading = getattr(self, '_cuboid_heading_report', None)
                 if heading is not None:
@@ -769,6 +791,10 @@ class HardwarePickDriver(Node):
     def prepare_place_segments(self, segments, detection=None, candidate=None):
         """Optional commissioning connector, called only after successful Pick."""
         return segments
+
+    def transfer_after_pick(self, ports):
+        """Site adapters may insert a held-box transfer before place planning."""
+        return True, 'no transfer configured'
 
     def shutdown_vacuum(self):
         if self._release_on_exit:
