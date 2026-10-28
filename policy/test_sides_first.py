@@ -6,6 +6,21 @@ from prepare_sides_first import sides_first
 
 
 class SidesFirstTests(unittest.TestCase):
+    def test_hardware_template_matches_checked_sides_first_plan(self):
+        import hashlib
+        root=Path(__file__).resolve().parents[1]
+        profile=json.loads((root/'deployment_ws/config/loading_cycle.site.template.json').read_text(encoding='utf-8'))
+        source=root/profile['assumptions']['source_bundle']
+        plan=json.loads((source/'plan.json').read_text(encoding='utf-8'))
+        expected=['red','silver','blue','bronzewhite','black','grey','pink','smallgrey']
+        self.assertEqual([cycle['box_label'] for cycle in profile['cycles']],expected)
+        self.assertEqual([row['label'] for row in plan['sequence']],expected)
+        self.assertEqual(profile['assumptions']['source_sha256']['plan.json'],
+                         hashlib.sha256((source/'plan.json').read_bytes()).hexdigest())
+        for cycle,row in zip(profile['cycles'],plan['sequence']):
+            self.assertEqual(cycle['expected_demo_input_dims_m'],row['input_dims_m'])
+            self.assertEqual(cycle['place_target']['position_m'],row['position_world_m'])
+
     def test_reorders_real_inventory_without_changing_physical_targets(self):
         path=Path(__file__).parent/'demo_data/measured8_spaced_inside_full/plan.json'
         original=json.loads(path.read_text(encoding='utf-8'))['sequence']

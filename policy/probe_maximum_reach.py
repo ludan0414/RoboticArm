@@ -28,11 +28,13 @@ def main():
             actual=workspace.model.body_q.numpy()[workspace.contact_body]
             result.update(actual_tool_pose=actual.tolist(),joint_degrees=np.degrees(q).tolist(),
                           actual_shortfall_m=float(np.linalg.norm(actual[:3]-target)),
-                          collision_free=bool(workspace._collision_free()))
+                          collision_free=bool(workspace._collision_free()),
+                          elbow_extension_error_deg=abs(float(np.degrees(q[2]))))
         result['success']=bool(not exact and ok and result.get('collision_free')
             and result['diagnostics'].get('reach_projected')
             and result['diagnostics']['position_error_m']<=workspace.position_tolerance_m
-            and result['diagnostics']['rotation_error_rad']<=.035)
+            and result['diagnostics']['rotation_error_rad']<=.035
+            and result['elbow_extension_error_deg']<=1.)
         write_json(args.output/'result.json',result)
         print(json.dumps(result),flush=True)
         return 0 if result['success'] else 1

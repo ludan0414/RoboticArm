@@ -1,11 +1,14 @@
+# Newton 集装箱粗仿真
+
 ## 当前八箱：两侧先放，中间最后放（2026-10-29）
 
-完整舱内回放包 `demo_data/measured8_sides_first_inside`，八箱共3379帧：
-红→银→蓝→青铜白→黑→灰→粉→小灰。已检查抓取、携箱、放置与反向返回；
-旧版包保留。此记录的供料位在舱外接驳处，地面上料验证是独立步骤。
+完整地面回放包 `demo_data/measured8_sides_first_ground`，八箱共5811帧：
+红→银→蓝→青铜白→黑→灰→粉→小灰。已检查地面抓取、外侧抬起、门外直线接驳、
+携箱、放置与返回；旧版包保留。舱内独立记录为 `demo_data/measured8_sides_first_inside`，
+八箱3379帧。现场示教P1/P2与此Newton名义接驳不同，尚未作真机运动验收。
 
 ```powershell
-python replay_prepared_demo.py --bundle demo_data/measured8_sides_first_inside --allow-partial
+python replay_prepared_demo.py --bundle demo_data/measured8_sides_first_ground --allow-partial
 ```
 
 `prepare_sides_first.py` 先按新顺序重算几何避障路线，`compile_spaced_full.py`
@@ -16,11 +19,11 @@ python replay_prepared_demo.py --bundle demo_data/measured8_sides_first_inside -
 下文较早的四箱/十箱说明保留用于历史回放；当前默认真机配置以
 `deployment_ws/config/loading_cycle.site.template.json` 及其 provenance 为准。
 
-# Newton 集装箱粗仿真
+## 历史四色入口
 
-当前四色四箱入口：`python run_four_box_demo.py`，详见本文末尾 Four-color luggage loading replay。
+此前四色四箱入口：`python run_four_box_demo.py`，详见本文末尾 Four-color luggage loading replay。
 当前默认记录为门框最小5cm净空的重新规划版本；旧记录保留作历史回放。
-真机默认 profile 对应四色四箱；下列单箱与十箱内容保留作历史回放。
+该历史 profile 对应四色四箱；下列单箱与十箱内容保留作历史回放。
 
 ## 历史单箱路线
 
@@ -640,9 +643,9 @@ empty return; it does not by itself generate or validate ground-feeder or real
 hardware motion. Only a successfully verified ground-feeder bundle can be
 passed to `export_hardware_loading_profile.py`.
 
-### Eight-case operator-assumed ground entry
+### Historical eight-case operator-assumed ground entry (2026-10-28)
 
-The current hardware template is explicitly exported from the fully validated
+The earlier hardware template was explicitly exported from the fully validated
 inside-and-return bundle `demo_data/measured8_spaced_inside_full`. The user
 requested proceeding before the ground-connection simulation finished. Only
 three ground cases completed; the fourth was interrupted during return. The

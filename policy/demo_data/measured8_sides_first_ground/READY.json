@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "ready": true,
+  "files": {
+    "input.json": "25ff8b530b417bd5ec694ab538141ae2823769fcae9b77dc3f4af86171439f41",
+    "domain.json": "2296c0100d710c89817d53a3d2ead7d70fe011a0b83062ad6fef23d4c082bd79",
+    "plan.json": "fc7411679458a9c5a9f047ac01a66b29ee003d8611d1920a1dbd1bf106a012a5",
+    "trajectory.npz": "3965c71b85a897348476737dea786c88d81393de9eb797ebe0c94323654f45e9",
+    "scene_tf.yaml": "dd0ca484c767734411a9abd6dc19c7900607c9cf04689b1c3d9292c5ec551f25",
+    "validation.json": "888917f284486ca02083d56b9e07d2b28f60e534714ac70b3862ef5f15830c77",
+    "model_manifest.json": "3811ae500dac06bcd2e147cdf0e381688b925ee27cc141f950feddc91e0f5a00",
+    "ground_result.json": "987122a71fa0d7d18821882245a38d155080ad2cd14795b4d130bf1e698287db",
+    "bridges.json": "01986668b0937f83c1b937fe5619fae29ed01228cf53a22aa35f9806a9a77d58",
+    "PROVENANCE.json": "9ff069191dc18a667fecf83511751fbe41f39b362ad54ba613571a2b50eca6ae"
+  }
+}

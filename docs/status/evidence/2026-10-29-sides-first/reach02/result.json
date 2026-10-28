@@ -1,0 +1,48 @@
+{
+  "requested_position_m": [
+    3.2,
+    0.0,
+    1.231000018119812
+  ],
+  "original_reachable": false,
+  "projected": true,
+  "diagnostics": {
+    "position_error_m": 0.0028674520210970945,
+    "rotation_error_rad": 0.002183660242740725,
+    "joint_limits": true,
+    "collision_free": true,
+    "reach_projected": true,
+    "requested_position_m": [
+      3.2,
+      0.0,
+      1.231000018119812
+    ],
+    "achieved_goal_m": [
+      1.612631125254277,
+      0.0,
+      1.1317894634482042
+    ],
+    "reach_shortfall_m": 1.59046618281237
+  },
+  "actual_tool_pose": [
+    1.6099224090576172,
+    7.048947736620903e-07,
+    1.1308486461639404,
+    0.999893844127655,
+    -3.492269024718553e-05,
+    -0.014437895268201828,
+    -0.002092974726110697
+  ],
+  "joint_degrees": [
+    -96.36709594726562,
+    -19.26620864868164,
+    0.008960907347500324,
+    -69.11236572265625,
+    -90.30265045166016,
+    83.63516235351562
+  ],
+  "actual_shortfall_m": 1.5932284966451837,
+  "collision_free": true,
+  "elbow_extension_error_deg": 0.008960907347500324,
+  "success": true
+}

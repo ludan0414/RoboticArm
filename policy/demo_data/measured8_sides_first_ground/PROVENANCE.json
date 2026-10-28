@@ -1,0 +1,8 @@
+{
+  "source_inside_bundle": "policy/demo_data/measured8_sides_first_inside",
+  "compiler_revision": "11bc856",
+  "source_run": "ground02",
+  "route_scope": "Newton nominal ground pickup, outside Cartesian rail, inside placement, empty return",
+  "hardware_motion_validated": false,
+  "live_taught_p1_p2_validated": false
+}

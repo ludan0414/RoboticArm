@@ -1,0 +1,100 @@
+{
+  "completed_at": "2026-10-28T17:55:57.027652+00:00",
+  "base_revision": "172528c834ddcd76e3cfe5f565545bc1aee67171",
+  "scope": "Newton nominal eight-box ground pick/carry/place/return; kinematic and mesh collision validation, not suction dynamics or real hardware",
+  "order": [
+    "red",
+    "silver",
+    "blue",
+    "bronzewhite",
+    "black",
+    "grey",
+    "pink",
+    "smallgrey"
+  ],
+  "inside": {
+    "success": true,
+    "boxes": 8,
+    "frames": 3379,
+    "visible_replay": true
+  },
+  "ground": {
+    "success": true,
+    "boxes": 8,
+    "frames": 5811,
+    "visible_replay": true,
+    "payload_checked_frames": 5894,
+    "penetration_tolerance_m": 0.001,
+    "max_final_position_error_m": 1.6560162748556744e-06,
+    "max_final_orientation_error_rad": 0.0,
+    "source": "policy/demo_data/measured8_sides_first_ground"
+  },
+  "reach": {
+    "success": true,
+    "original_reachable": false,
+    "collision_free": true,
+    "elbow_extension_error_deg": 0.008960907347500324,
+    "requested_position_m": [
+      3.2,
+      0.0,
+      1.231000018119812
+    ],
+    "achieved_tool_pose": [
+      1.6099224090576172,
+      7.048947736620903e-07,
+      1.1308486461639404,
+      0.999893844127655,
+      -3.492269024718553e-05,
+      -0.014437895268201828,
+      -0.002092974726110697
+    ],
+    "actual_shortfall_m": 1.5932284966451837
+  },
+  "tests": {
+    "passed": 87,
+    "total": 87,
+    "log": "unit_final_02.log"
+  },
+  "failed_ground01": {
+    "preserved": true,
+    "completed_boxes": 3,
+    "failed_box": "B10",
+    "failed_stage": "CARRY",
+    "reason": "joint approach search wall-clock deadline",
+    "capture": "ground01/joint_path_012.json"
+  },
+  "connector_replay": {
+    "success": true,
+    "frames": 68,
+    "result": "connector01/probe_result.json"
+  },
+  "hardware_motion_validated": false,
+  "live_taught_p1_p2_validated": false,
+  "code_sha256": {
+    "policy/newton_ik_planner.py": "f474140a3a6c2e36701bf762e32b68ae39231950d0f8bc4e812e787a9fbe3dee",
+    "policy/reach_projection.py": "446ee0ad833d4d7a5a01bae592ee9e99b359ccf639d928609b30d7f4872c8676",
+    "policy/ground_feeder_bridge.py": "b61eb6de712292247b7b56790910aeefdbd39987b6549555e00d26b39572a12a",
+    "src/luggage_planning/luggage_planning/reach_limit.py": "ed48f2a590fcf1d15a9af4d1ee2ea2bc393c3813a8f01bf6aa618a17ec24a9be",
+    "src/luggage_planning/luggage_planning/cartesian_recovery.py": "01279a24f37b158c5fbcaeb8b2a76d49e6c5d79467c618260560a8cbae95c811",
+    "src/luggage_planning/luggage_planning/motion_executor.py": "ab2e6ad74afd4db76f9b80bf406cccd99cc69d316c56a1edab447d338d38cc69",
+    "src/luggage_planning/scripts/hardware_pick_driver.py": "da61606873ee9df7c8fb96fdf9f133a6f618280de6b2376647ebaeb3784c5dc4",
+    "src/luggage_planning/scripts/motion_planner_node.py": "234685fc173133e1d885d7559c46977fe935b49633e03e01b66514ed66613ca1"
+  },
+  "bundle_ready_sha256": {
+    "measured8_sides_first_inside": "9f1fe0e79702f22b3d6518be731ad831269b2d3711f17a7840ad49e752fac3ee",
+    "measured8_sides_first_ground": "8ef1be89e6a1c4685b30dcff36635375c489ac3463b7574d0e9211e14139a90b"
+  },
+  "teardown": "ground compiler, reach probe and both visible replays exited normally; no ROS/Gazebo stack started",
+  "nominal_reach_projection_calls": {
+    "inside01": 0,
+    "ground02": 0
+  },
+  "completion_audit": {
+    "remote_base_incorporated": true,
+    "all_eight_ground_paths_checked_and_replayed": true,
+    "side_stacks_before_centre_in_plan_profile_and_recording": true,
+    "maximum_extension_probed_with_real_urdf": true,
+    "behavioral_regression_tests_passed": 87,
+    "hardware_validation_claimed": false
+  }
+}

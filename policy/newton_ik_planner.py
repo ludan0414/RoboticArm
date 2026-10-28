@@ -220,7 +220,14 @@ class NewtonIKWorkspace:
             self.q_last = original_seed.copy()
             ok, joints = self.solve_world_pose(point, yaw, orientation_xyzw=orientation_xyzw)
             return joints if ok else None
-        answer = furthest_reachable(self.shoulder_world, target_position, solve)
+        delta = np.asarray(target_position, dtype=float)-self.shoulder_world
+        distance = float(np.linalg.norm(delta))
+        # Begin inside the URDF-derived broad-phase bound even for a target
+        # arbitrarily far away. Search the full radial interval, not just an
+        # arbitrary fraction of the original request.
+        search_target = (self.shoulder_world + delta*self.reach_radius/distance
+                         if distance > self.reach_radius else target_position)
+        answer = furthest_reachable(self.shoulder_world, search_target, solve)
         if answer is None:
             self.q_last = original_seed
             return False, None
@@ -234,6 +241,8 @@ class NewtonIKWorkspace:
             self.q_last = original_seed
             return False, None
         answer['solution'] = solution
+        answer['shortfall_m'] = max(0., distance-float(np.linalg.norm(
+            np.asarray(answer['point'])-self.shoulder_world)))
         self.q_last = answer['solution'].copy()
         self.last_diagnostics = dict(self.last_diagnostics,
             reach_projected=answer['shortfall_m'] > self.position_tolerance_m,

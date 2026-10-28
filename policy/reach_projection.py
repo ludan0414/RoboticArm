@@ -7,7 +7,7 @@ import math
 
 
 def furthest_reachable(origin, target, solve, *, step_m=.02, precision_m=.001,
-                       minimum_fraction=.35):
+                       minimum_fraction=0.):
     delta = tuple(b-a for a, b in zip(origin, target))
     distance = math.sqrt(sum(v*v for v in delta))
     if len(delta) != 3 or not math.isfinite(distance) or distance <= precision_m:

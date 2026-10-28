@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "units": "m",
+  "boxes": [
+    [
+      0.55,
+      0.36,
+      0.23
+    ],
+    [
+      0.67,
+      0.43,
+      0.26
+    ],
+    [
+      0.55,
+      0.36,
+      0.23
+    ],
+    [
+      0.59,
+      0.37,
+      0.24
+    ],
+    [
+      0.56,
+      0.36,
+      0.21
+    ],
+    [
+      0.65,
+      0.41,
+      0.24
+    ],
+    [
+      0.66,
+      0.42,
+      0.31
+    ],
+    [
+      0.75,
+      0.49,
+      0.29
+    ],
+    [
+      0.75,
+      0.49,
+      0.29
+    ],
+    [
+      0.67,
+      0.43,
+      0.27
+    ],
+    [
+      0.72,
+      0.46,
+      0.28
+    ],
+    [
+      0.41,
+      0.4,
+      0.22
+    ],
+    [
+      0.56,
+      0.34,
+      0.21
+    ]
+  ],
+  "box_labels": [
+    "blue",
+    "black",
+    "grey",
+    "red",
+    "silver",
+    "pink",
+    "magenta",
+    "blackwhite",
+    "blackbronze",
+    "bronzewhite",
+    "bronze",
+    "smallgrey",
+    "blackpink"
+  ],
+  "notes": "blackwhite and blackbronze are distinct physical suitcases with identical measured outer cuboids."
+}

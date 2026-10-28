@@ -16,6 +16,13 @@ class ReachProjectionTests(unittest.TestCase):
     def test_never_accepts_an_unvalidated_projected_point(self):
         self.assertIsNone(furthest_reachable((0,0,0), (3,0,0), lambda p: None))
 
+    def test_far_target_still_finds_a_small_reachable_annulus(self):
+        answer=furthest_reachable((0,0,0),(10,0,0),
+            lambda point:point if .2<=point[0]<=1.5 else None)
+        self.assertIsNotNone(answer)
+        self.assertAlmostEqual(answer['point'][0],1.5,delta=.001)
+        self.assertAlmostEqual(answer['shortfall_m'],8.5,delta=.001)
+
     def test_reachable_original_goal_is_unchanged(self):
         answer = furthest_reachable((0,0,0), (1,0,0), lambda p: p)
         self.assertEqual(answer['point'], (1.,0.,0.))
