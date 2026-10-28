@@ -39,10 +39,11 @@ Commissioning placement derives the box/tool transform from detected box pose
 and fresh actual tool TF at sealed contact. Carry routing and clearance share
 that transform; carrying joint paths must not have J6 overwritten afterward.
 At this site, a completed pick retreat is followed by the photographed P1
-then P2 joint targets for every box. Both are planned with the attached box;
+then P2 joint targets for every box. P1 is planned with the attached box;
 placement is generated only after P2 settles and a fresh tool TF is read.
-The P1-to-P2 leg uses a monotone sampled joint line, with each state validated
-against the current attached-payload scene before execution. The next route
+The P1-to-P2 leg uses the operator-taught monotone sampled joint line without
+planning-scene collision checks; joint continuity and wrist checks remain.
+The next route
 starts at the measured P2 box pose and advances through the door without
 returning to the old nominal outside waypoint.
 Transfer progress is checkpointed before release. A failed transfer retains

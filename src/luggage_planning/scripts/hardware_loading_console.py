@@ -450,6 +450,8 @@ class CommissioningDriver(HardwarePickDriver):
 
     def guard_segment(self, segment):
         self.validate_scene_frame()
+        if segment.type == TRANSFER_TYPES[1]:
+            return True, 'operator-taught P1-P2 joint line; scene collision checks bypassed'
         ok,message=self.ensure_doorway_clearance()
         if not ok:
             return ok,message

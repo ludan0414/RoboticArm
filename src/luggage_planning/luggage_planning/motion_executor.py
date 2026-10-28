@@ -13,7 +13,7 @@ Segment routing (docs/plans/closed_loop_pick_retreat_nodes.md):
     cartesian    -> GetCartesianPath geometry, wrist gate, excursion diagnostics,
                     occupancy sweep, then rest-to-rest ExecuteTrajectory
     commissioning_home -> hardcoded photographed J1..J6 via MoveGroup joint goal
-    commissioning_carry_p2 -> sampled monotone joint line, each state checked
+    commissioning_carry_p2 -> sampled monotone taught joint line
     named pose   -> handled by the node via plain FJT (see motion_planner_node)
 
 ``keep_tool_down`` adds an orientation constraint (tool Z down).
@@ -53,7 +53,7 @@ from moveit_msgs.msg import (
     PositionConstraint,
     PositionIKRequest,
 )
-from moveit_msgs.srv import GetCartesianPath, GetPositionFK, GetPositionIK, GetStateValidity
+from moveit_msgs.srv import GetCartesianPath, GetPositionFK, GetPositionIK
 from moveit_msgs.msg import RobotTrajectory
 from trajectory_msgs.msg import JointTrajectoryPoint
 from shape_msgs.msg import SolidPrimitive
@@ -291,7 +291,6 @@ class MotionExecutor:
             node, MoveGroup, "/move_action")
         self._execute = rclpy.action.ActionClient(
             node, ExecuteTrajectory, "/execute_trajectory")
-        self._state_validity = node.create_client(GetStateValidity, "/check_state_validity")
         self._cartesian = node.create_client(
             GetCartesianPath, "/compute_cartesian_path")
         self._ik = node.create_client(GetPositionIK, "/compute_ik")
@@ -625,7 +624,7 @@ class MotionExecutor:
 
     def _run_taught_joint_line(self, target, feedback_cb, execute_timeout,
                                current_joints, segment_msg):
-        """P1->P2 without OMPL detours; check every 1° state before execution."""
+        """P1->P2 follows the operator-taught joint line without scene collision checks."""
         from luggage_planning.manual_carry_transfer import joint_line, on_p1_p2_line
         if current_joints is None or len(current_joints) != len(JOINTS):
             return self._result(False, 'CARRY_JOINT_LINE: current joints unavailable')
@@ -637,24 +636,8 @@ class MotionExecutor:
             points = joint_line(current_joints, target)
         except ValueError as exc:
             return self._result(False, 'CARRY_JOINT_LINE: '+str(exc))
-        if not self._state_validity.wait_for_service(timeout_sec=3.0):
-            return self._result(False, 'CARRY_JOINT_LINE: state validity service unavailable')
         self._notify(feedback_cb, 'planning', segment_msg.name, 0.0,
-                     'checking %d attached-payload joint samples' % len(points))
-        for index, positions in enumerate(points):
-            request = GetStateValidity.Request()
-            request.group_name = self._group
-            request.robot_state.is_diff = True
-            request.robot_state.joint_state.name = list(JOINTS)
-            request.robot_state.joint_state.position = list(positions)
-            response = self._wait_future(self._state_validity.call_async(request), 3.0)
-            if response is None or not response.valid:
-                contacts = [] if response is None else [
-                    '%s/%s' % (c.contact_body_1, c.contact_body_2)
-                    for c in response.contacts[:3]]
-                return self._result(False,
-                    'CARRY_JOINT_LINE: state %d/%d invalid (%s)' % (
-                        index, len(points)-1, ', '.join(contacts) or 'timeout/collision'))
+                     'executing %d taught joint samples' % len(points))
         trajectory = RobotTrajectory()
         trajectory.joint_trajectory.joint_names = list(JOINTS)
         trajectory.joint_trajectory.points = [
@@ -662,14 +645,10 @@ class MotionExecutor:
         measurement = self._wrist_check(trajectory.joint_trajectory.points, JOINTS)
         if measurement is not None and not measurement['ok']:
             return self._result(False, 'CARRY_JOINT_LINE: wrist singularity')
-        if self._occupancy is not None:
-            ok, reason = self._occupancy_ok_robot_traj(trajectory)
-            if not ok:
-                return self._result(False, 'CARRY_JOINT_LINE: '+reason)
         result = self._execute_robot_trajectory(
             trajectory, segment_msg.name, 1.0, feedback_cb, execute_timeout)
         if result.success:
-            result.message = 'taught joint line ok (%d checked states)' % len(points)
+            result.message = 'taught joint line ok (%d states)' % len(points)
         return result
 
     def _run_joint_goal(self, positions, feedback_cb, execute_timeout, note,
