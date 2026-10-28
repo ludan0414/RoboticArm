@@ -475,6 +475,7 @@ def generate_launch_description():
                     # cell. MoveIt limits/collisions and wrist checks remain.
                     "max_segment_joint_excursion_rad": 0.0,
                     "cartesian_excursion_rad_per_m": 0.0,
+                    "software_collision_checks": False,
                     "fjt_action": "/elfin_arm_controller/follow_joint_trajectory",
                 }],
                 condition=start_planning,

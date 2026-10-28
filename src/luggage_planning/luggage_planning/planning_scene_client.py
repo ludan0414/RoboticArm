@@ -516,3 +516,34 @@ class PlanningSceneClient(object):
                 return True, "acm verified"
             time.sleep(0.1)
         return False, "acm verify timed out"
+
+    def allow_all_collisions(self, timeout=5.0):
+        """Site operator override: permit robot/self/world contacts in MoveIt.
+
+        Defaults cover objects added after this call; the explicit matrix is
+        updated too because its entries take precedence over defaults.
+        """
+        scene = self.get_scene(
+            PlanningSceneComponents.ALLOWED_COLLISION_MATRIX |
+            PlanningSceneComponents.WORLD_OBJECT_GEOMETRY |
+            PlanningSceneComponents.ROBOT_STATE_ATTACHED_OBJECTS,
+            timeout=timeout)
+        if scene is None:
+            return False, "collision override: planning scene unavailable"
+        acm = scene.allowed_collision_matrix
+        names = set(acm.entry_names)
+        names.update(obj.id for obj in scene.world.collision_objects)
+        names.update(obj.object.id for obj in scene.robot_state.attached_collision_objects)
+        names.update({BOX_OBJECT_ID, DEFAULT_ATTACH_LINK, "elfin_base_link"})
+        names.update("elfin_link%d" % i for i in range(7))
+        for name in sorted(names):
+            if name not in acm.default_entry_names:
+                acm.default_entry_names.append(name)
+                acm.default_entry_values.append(True)
+            else:
+                acm.default_entry_values[list(acm.default_entry_names).index(name)] = True
+        width = len(acm.entry_names)
+        for entry in acm.entry_values:
+            entry.enabled = [True] * width
+        ok, message = self._apply(build_acm_diff(acm), timeout=timeout)
+        return ok, "all MoveIt scene collisions allowed" if ok else message

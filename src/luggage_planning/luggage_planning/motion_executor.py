@@ -757,7 +757,7 @@ class MotionExecutor:
         request = GetPositionIK.Request()
         request.ik_request.group_name = self._group
         request.ik_request.ik_link_name = self._link
-        request.ik_request.avoid_collisions = True
+        request.ik_request.avoid_collisions = self._avoid_collisions
         request.ik_request.robot_state.is_diff = True
         from luggage_planning.ik_search import nearby_ik_seeds, IK_ATTEMPT_TIMEOUT_SEC
         request.ik_request.timeout = DurationMsg(sec=IK_ATTEMPT_TIMEOUT_SEC, nanosec=0)

@@ -104,6 +104,7 @@ class MotionPlannerNode(Node):
         self.declare_parameter("planner_id", "RRTConnect")
         self.declare_parameter("cartesian_max_step", 0.01)
         self.declare_parameter("cartesian_min_fraction", 0.95)
+        self.declare_parameter("software_collision_checks", True)
         # Legacy parameter: diagnostic reference only. It cannot re-enable
         # rad/m rejection; collisions, wrist checks and limits are independent.
         self.declare_parameter("cartesian_excursion_rad_per_m", 3.0)
@@ -202,6 +203,8 @@ class MotionPlannerNode(Node):
             planner_id=str(self.get_parameter("planner_id").value),
             cartesian_max_step=float(
                 self.get_parameter("cartesian_max_step").value),
+            cartesian_avoid_collisions=bool(
+                self.get_parameter("software_collision_checks").value),
             velocity_scaling=float(
                 self.get_parameter("velocity_scaling").value),
             acceleration_scaling=float(
@@ -354,6 +357,9 @@ class MotionPlannerNode(Node):
         support and inflated neighbours cannot block the insertion they
         exist for.
         """
+        if not self.get_parameter("software_collision_checks").value:
+            self._executor_client.set_occupancy(None)
+            return ""
         name = str(getattr(segment, "name", ""))
         if not occupancy_scope(
                 self.get_parameter("occupancy_segments").value, name):
@@ -513,6 +519,12 @@ class MotionPlannerNode(Node):
             response.success = False
             response.message = "move_group not ready"
             return response
+        if not self.get_parameter("software_collision_checks").value:
+            ok, message = self._scene_client.allow_all_collisions()
+            if not ok:
+                response.success = False
+                response.message = message
+                return response
         # Probes see the same occupancy the executed segment would: scope,
         # landing exemption, injected boxes (plan-only, nothing moves).
         occ_err = self._prepare_occupancy(segment)
@@ -566,6 +578,15 @@ class MotionPlannerNode(Node):
             result.message = "move_group unavailable"
             self._emit_boundary(name, extra={"kind": "PlanMotion"}, success=False)
             return result
+
+        if not self.get_parameter("software_collision_checks").value:
+            ok, message = self._scene_client.allow_all_collisions()
+            if not ok:
+                goal_handle.abort()
+                result.success = False
+                result.message = message
+                self._emit_boundary(name, extra={"kind": "PlanMotion"}, success=False)
+                return result
 
         try:
             occ_err = self._prepare_occupancy(segment)

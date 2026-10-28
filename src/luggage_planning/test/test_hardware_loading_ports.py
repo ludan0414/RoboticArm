@@ -242,6 +242,7 @@ class AdapterTests(unittest.TestCase):
 
     def test_guard_checks_vias_before_endpoint_and_stops_on_blocked_via(self):
         driver=self.module.CommissioningDriver()
+        driver.software_collision_checks=True
         driver.validate_scene_frame=lambda: None
         driver.ensure_doorway_clearance=lambda:(True,'verified')
         driver.lookup_pose=lambda *args,**kwargs: Pose()
@@ -255,9 +256,18 @@ class AdapterTests(unittest.TestCase):
         self.assertFalse(driver.guard_segment(segment)[0])
         self.assertEqual(seen,[(0,1),(1,2)])
 
+    def test_site_operator_collision_override_skips_software_route_guard(self):
+        driver=self.module.CommissioningDriver()
+        driver.validate_scene_frame=lambda:None
+        driver.motion_guard=SimpleNamespace(check_segment=lambda *args:(_ for _ in ()).throw(
+            AssertionError('software collision guard called')))
+        segment=MotionSegment(name='pre_place',type='cartesian',target_pose=Pose())
+        self.assertTrue(driver.guard_segment(segment)[0])
+
     def test_joint_home_keeps_scene_gate_without_testing_a_fake_tcp_target(self):
         from luggage_planning.commissioning_home import HOME_SEGMENT_TYPE
         driver=self.module.CommissioningDriver()
+        driver.software_collision_checks=True
         checked=[]
         driver.validate_scene_frame=lambda: checked.append('scene')
         driver.ensure_doorway_clearance=lambda:(True,'verified')

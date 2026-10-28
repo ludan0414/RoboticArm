@@ -101,7 +101,7 @@ pre{white-space:pre-wrap;font-size:13px}
 <h1>真机逐箱操作台 · 现场调试模式</h1>
 <p id="recording-status"></p>
 <p>初始化可选：归到照片中的固定关节位，或跳过并从当前位置开始。每次 Pick 自动抓取、放置、松吸、退舱、归位。</p>
-<p>尚无自动扫舱、视觉放置验收或地图提交。占位仅供避障，并非实测货舱地图。</p>
+<p>尚无自动扫舱、视觉放置验收或地图提交。当前现场模式已关闭软件规划碰撞检查；控制器自身保护仍独立生效。</p>
 <div class="grid">
 <div id="cycle-card" class="card unknown"><h2>任务</h2>
 <div class="kv"><span>状态</span><span id="cycle-state" class="big"></span></div>
@@ -229,6 +229,7 @@ a.onclick=()=>send('initialize');s.onclick=()=>send('skip_initialize');b.onclick
 
 
 class CommissioningDriver(HardwarePickDriver):
+    software_collision_checks = False
     # Rigid sealed-grasp estimate must reach these bounds before release.
     place_position_tolerance_m = .01
     place_orientation_tolerance_rad = math.radians(2)
@@ -450,6 +451,8 @@ class CommissioningDriver(HardwarePickDriver):
 
     def guard_segment(self, segment):
         self.validate_scene_frame()
+        if not self.software_collision_checks:
+            return True, 'site software collision checks disabled by operator'
         if segment.type == TRANSFER_TYPES[1]:
             return True, 'operator-taught P1-P2 joint line; scene collision checks bypassed'
         ok,message=self.ensure_doorway_clearance()
@@ -473,6 +476,8 @@ class CommissioningDriver(HardwarePickDriver):
         return True, 'all route intervals checked'
 
     def ensure_doorway_clearance(self):
+        if not self.software_collision_checks:
+            return True, 'site doorway collision checks disabled by operator'
         guards=self.doorway_guard.collision_boxes(self.lookup_pose('world','container_link'))
         geometry=getattr(self,'_scene_box',None)
         carrying=bool(getattr(self,'_doorway_carrying',False) and geometry is not None)
