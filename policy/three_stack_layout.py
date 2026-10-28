@@ -4,6 +4,7 @@ from online_packing_demo import Box, collides, fully_supported
 # Bottom-up per stack. Every label denotes a distinct physical suitcase.
 STACKS=(('red','silver','blue'),('pink','smallgrey'),('bronzewhite','black','grey'))
 CENTERS=((.60,.28),(.60,.78),(.60,1.28))
+STACK_LOADING_ORDER = (0, 2, 1)  # Both side aisles before the centre aisle.
 
 
 def lateral_gap(first, second):
@@ -15,7 +16,8 @@ def lateral_gap(first, second):
 def build_three_stacks(inventory, hull, centers=CENTERS):
     lookup={name:(i,dims) for i,(name,dims) in enumerate(zip(inventory['box_labels'],inventory['boxes']))}
     output=[]
-    for names,(x,y) in zip(STACKS,centers):
+    for group in STACK_LOADING_ORDER:
+        names, (x,y) = STACKS[group], centers[group]
         z=0.0
         for level,name in enumerate(names,1):
             index,dims=lookup[name]

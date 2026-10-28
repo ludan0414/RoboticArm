@@ -29,20 +29,33 @@ def replan_complete_route(executor, segment, feedback, timeout, current_joints, 
         executor._planned_traj = None
         result = executor._run_pose_target(hop, feedback, timeout, seed)
         trajectory = getattr(executor, '_planned_traj', None)
-        trace.append(dict(index=index, success=bool(result.success), message=result.message,
-                          trajectory=robot_traj_to_dict(trajectory)))
+        item = dict(index=index, success=bool(result.success), message=result.message,
+                    trajectory=robot_traj_to_dict(trajectory))
+        trace.append(item)
         if not result.success:
             result.message = '%s: full-goal replan %d/%d failed: %s' % (
                 segment.name, index+1, len(targets), result.message)
             break
-        if index+1 < len(targets):
+        if index+1 < len(targets) or getattr(executor, '_reach_projections', None):
             joint = getattr(trajectory, 'joint_trajectory', None)
             if joint is None or not joint.points:
                 result = executor._result(False, '%s: replan endpoint joints missing' % segment.name, fraction)
                 break
             seed = list(joint.points[-1].positions)
+            if getattr(executor, '_reach_projections', None):
+                from luggage_planning.reach_limit import pose_dict
+                pose = executor._fk_pose(seed)
+                if pose is None:
+                    result = executor._result(False, '%s: achieved TCP unavailable after reach projection' % segment.name, fraction)
+                    break
+                item['achieved_pose'] = pose_dict(pose)
+                # Earlier hops had exact IK goals; preserve them too, so the
+                # client never records unexecuted projected requests on return.
+                for previous in trace:
+                    if 'achieved_pose' not in previous:
+                        previous['achieved_pose'] = pose_dict(targets[previous['index']])
     else:
-        result.message = '%s: reached all %d poses by full-goal replan (Cartesian fraction %.3f)' % (
+        result.message = '%s: completed %d transit goals by replan (Cartesian fraction %.3f)' % (
             segment.name, len(targets), fraction)
     result.fraction = fraction
     result.used_ompl_fallback = True

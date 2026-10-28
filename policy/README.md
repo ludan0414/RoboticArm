@@ -1,3 +1,21 @@
+## 当前八箱：两侧先放，中间最后放（2026-10-29）
+
+完整舱内回放包 `demo_data/measured8_sides_first_inside`，八箱共3379帧：
+红→银→蓝→青铜白→黑→灰→粉→小灰。已检查抓取、携箱、放置与反向返回；
+旧版包保留。此记录的供料位在舱外接驳处，地面上料验证是独立步骤。
+
+```powershell
+python replay_prepared_demo.py --bundle demo_data/measured8_sides_first_inside --allow-partial
+```
+
+`prepare_sides_first.py` 先按新顺序重算几何避障路线，`compile_spaced_full.py`
+逐帧检查完整动作后才生成 READY。`prepare_measured_ground.py` 另外验证地面上料。
+`probe_maximum_reach.py` 验证最大伸展；搬运允许把中间点缩到可达边界，
+抓取与放置接触点仍保持精确目标，原始目标和实际替代点分别记录。
+
+下文较早的四箱/十箱说明保留用于历史回放；当前默认真机配置以
+`deployment_ws/config/loading_cycle.site.template.json` 及其 provenance 为准。
+
 # Newton 集装箱粗仿真
 
 当前四色四箱入口：`python run_four_box_demo.py`，详见本文末尾 Four-color luggage loading replay。

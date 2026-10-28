@@ -1,7 +1,14 @@
 # 八箱真机配置与验证范围
 
+2026-10-29：默认顺序改为两侧先放、中间最后放。新 Newton 源包
+`policy/demo_data/measured8_sides_first_inside/` 的八箱入舱、放置、反向返回
+共3379帧通过检查并完成自动可视化回放。原版保留。最大伸展专项验证：
+不可达目标得到无碰撞可达替代点，J3约0.003°，原目标未被冒充到达。
+见[伸展处理与日志](sides_first_reach.md)。地面接驳和现场新 P1/P2 入舱
+仍必须与舱内源包的验证范围区分；未完成的检查不能声明通过。
+
 默认现场 profile `deployment_ws/config/loading_cycle.site.template.json` 现在包含八箱，
-顺序：红、银、蓝、粉、小灰、青铜白、黑、灰。blackwhite 与 blackbronze 是两只
+顺序：红、银、蓝、青铜白、黑、灰、粉、小灰。blackwhite 与 blackbronze 是两只
 独立箱子，均未选入这次方案。三堆分别为红/银/蓝、粉/小灰、青铜白/黑/灰。
 
 2026-10-28：真机操作台已将八箱入口统一替换为“门外居中→全箱入舱→高位横移→

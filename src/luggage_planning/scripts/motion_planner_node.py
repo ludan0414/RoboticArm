@@ -648,6 +648,12 @@ class MotionPlannerNode(Node):
 
         settled, settle_diag = self._wait_settled(
             lambda: feedback("settling", name, fraction))
+        boundary = self._executor_client.last_boundary() or {}
+        if boundary.get('reach_projections'):
+            settle_diag['reach_projections'] = boundary['reach_projections']
+            recovered = boundary.get('cartesian_recovery') or []
+            settle_diag['executed_transit_poses'] = [
+                item['achieved_pose'] for item in recovered if item.get('success') and item.get('achieved_pose')]
         result.settle_json = json.dumps(settle_diag, sort_keys=True)
         if not settled:
             goal_handle.abort()

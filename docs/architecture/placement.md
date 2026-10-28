@@ -262,6 +262,20 @@ Use the executor's existing CPS connection and already-read samples; do not
 open a separate monitor connection or infer missing actual samples from plans.
 Preserve deployed dirty sources, topic coverage and file errors for diagnosis.
 
+## Reach-limit handling
+
+Commissioning transit IK may shorten an unreachable intermediate carry goal
+along the measured current-TCP-to-target line. Search the outer feasible
+bracket, retaining target attitude, configured joint limits and the active
+scene policy. This is a changed transit endpoint, not exact-goal success.
+Pick contact, place descent and recorded-return requests must never use this
+fallback. Preserve requested/achieved poses and shortfall in boundary logs;
+return recording uses achieved transit poses, never shortened-away requests.
+Contact placement and its configured support remain unchanged. Newton's
+equivalent transit search uses the shoulder ray and checks every resulting
+frame against the scene; its achieved goal is logged independently of the
+original target. A closest endpoint does not certify the swept path.
+
 ## Replay / redesign path (not the live node)
 
 `FreeSpaceModel` replaces the sliding window with a persistent heightmap,

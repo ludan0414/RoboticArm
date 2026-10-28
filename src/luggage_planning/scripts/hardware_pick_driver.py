@@ -174,6 +174,13 @@ class RosPickSessionPorts:
         self.log_event(event)
         observer = getattr(self._driver, "record_completed_motion", None)
         if ok and observer is not None:
+            settled = json.loads(str(getattr(result, 'settle_json', '') or '{}'))
+            if settled.get('reach_projections'):
+                from copy import deepcopy
+                from luggage_planning.pose import Pose, Point, Quaternion
+                segment = deepcopy(segment)
+                segment.waypoints = [Pose(Point(**pose['position']), Quaternion(**pose['orientation']))
+                                     for pose in settled.get('executed_transit_poses', [])]
             observer(segment)
         return SegmentOutcome(
             ok=ok, message=message,

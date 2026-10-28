@@ -9,6 +9,31 @@ from verify_pick_place_run import BOX_STAGES, verify
 
 
 class EvidenceTests(unittest.TestCase):
+    def test_transit_reaches_boundary_but_pick_and_place_never_shorten_contact(self):
+        import io
+        from types import SimpleNamespace
+        from unittest.mock import Mock, patch
+        from run_pick_place_pipeline import Pipeline
+        run = object.__new__(Pipeline)
+        run.trace, run.q = io.StringIO(), np.zeros(6)
+        run.max_position_error = run.max_rotation_error = 0.
+        projected = Mock(return_value=(True, np.ones(6)))
+        run.ik = SimpleNamespace(last_diagnostics={},
+            solve_world_pose=lambda *a, **kw: (False, None),
+            solve_reachable_world_pose=projected)
+        run.model = SimpleNamespace(
+            joint_limit_lower=SimpleNamespace(numpy=lambda: np.full(6, -6)),
+            joint_limit_upper=SimpleNamespace(numpy=lambda: np.full(6, 6)))
+        with patch('run_pick_place_pipeline.nearest_revolute_solution', side_effect=lambda q,*a:q):
+            run.stage = 'CARRY'
+            self.assertTrue(np.all(run.solve([3.,0.,1.],0.) == 1.))
+            self.assertEqual(projected.call_count, 1)
+            for stage in ('PICK', 'PLACE', 'ATTACH'):
+                run.stage = stage
+                with self.assertRaisesRegex(RuntimeError, 'IK/collision rejected'):
+                    run.solve([3.,0.,1.],0.)
+            self.assertEqual(projected.call_count, 1)
+
     def test_adjacent_phase_repeat_is_idempotent_but_reentry_is_not(self):
         events = [json.loads(line) for line in (self.path / "stages.jsonl").read_text().splitlines()]
         index = next(i for i, e in enumerate(events) if e["stage"] == "CARRY")

@@ -32,6 +32,7 @@ class IKSearchTests(unittest.TestCase):
         executor._ik = NS(wait_for_service=lambda **kw:True, call_async=solve)
         executor._wait_future = lambda result, timeout:result
         executor._group,executor._link,executor._frame = 'arm','tcp','world'
+        executor._avoid_collisions = True
         return executor,calls
 
     def test_solver_exhaustion_retries_nearby_seeds_with_same_pose_and_collision_checks(self):

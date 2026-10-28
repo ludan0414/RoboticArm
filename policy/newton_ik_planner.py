@@ -208,6 +208,39 @@ class NewtonIKWorkspace:
     def tool_orientation(self, yaw):
         return container_tool_orientation(self.config, yaw)
 
+    def solve_reachable_world_pose(self, target_position, yaw, *, orientation_xyzw=None):
+        """Extend along the requested ray, recording a distinct achieved goal.
+
+        This opt-in transit API retains orientation, joint limits and scene
+        collision checks. Pick/place contacts must use solve_world_pose.
+        """
+        from reach_projection import furthest_reachable
+        original_seed = self.q_last.copy()
+        def solve(point):
+            self.q_last = original_seed.copy()
+            ok, joints = self.solve_world_pose(point, yaw, orientation_xyzw=orientation_xyzw)
+            return joints if ok else None
+        answer = furthest_reachable(self.shoulder_world, target_position, solve)
+        if answer is None:
+            self.q_last = original_seed
+            return False, None
+        # The last bisection probe may have failed; diagnostics and FK must
+        # describe the accepted answer rather than that rejected probe.
+        target_rotation = (self.tool_orientation(yaw) if orientation_xyzw is None
+                           else np.asarray(orientation_xyzw, dtype=np.float32))
+        ok, solution = self._solve_once(answer['point'], target_rotation,
+                                        answer['solution'], True)
+        if not ok:
+            self.q_last = original_seed
+            return False, None
+        answer['solution'] = solution
+        self.q_last = answer['solution'].copy()
+        self.last_diagnostics = dict(self.last_diagnostics,
+            reach_projected=answer['shortfall_m'] > self.position_tolerance_m,
+            requested_position_m=list(map(float, target_position)),
+            achieved_goal_m=list(answer['point']), reach_shortfall_m=answer['shortfall_m'])
+        return True, answer['solution']
+
     def solve_world_pose(self, target_position, yaw: float, *, check_collision=True,
                          orientation_xyzw=None) -> tuple[bool, np.ndarray | None]:
         target_position = np.asarray(target_position, dtype=np.float32)

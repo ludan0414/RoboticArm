@@ -382,6 +382,8 @@ class MotionExecutor:
             self._last_boundary['release_height_recovery'] = self._release_height_recovery
         if getattr(self, '_last_ik_attempts', None):
             self._last_boundary['ik_attempts'] = self._last_ik_attempts
+        if getattr(self, '_reach_projections', None):
+            self._last_boundary['reach_projections'] = self._reach_projections
         if self._occupancy is not None:
             from luggage_planning.occupancy_place_paths import (
                 occupancy_collision_boxes)
@@ -411,6 +413,7 @@ class MotionExecutor:
         self._cartesian_partial = None
         self._release_height_recovery = []
         self._last_ik_attempts = []
+        self._reach_projections = []
         self._start_joints = list(current_joints or [])
         try:
             result = self._execute_segment_inner(
@@ -586,6 +589,34 @@ class MotionExecutor:
                          current_joints=None):
         self._notify(feedback_cb, "planning", segment_msg.name, 0.0)
         ik_joints = self._ik_joints(segment_msg.target_pose, current_joints)
+        from luggage_planning.reach_limit import is_transit_goal, closest_transit_pose, pose_dict
+        if (ik_joints is None and self._last_ik_code == -31
+                and is_transit_goal(segment_msg.name) and current_joints):
+            start = self._fk_pose(current_joints)
+            if start is not None:
+                stop = [False]
+                def probe(pose):
+                    if stop[0] or (getattr(self, '_cancel_check', None) and self._cancel_check()):
+                        stop[0] = True
+                        return None
+                    joints = self._ik_joints(pose, current_joints)
+                    if joints is None and self._last_ik_code != -31:
+                        stop[0] = True
+                    return joints
+                answer = closest_transit_pose(start, segment_msg.target_pose, probe,
+                    lambda: self._notify(feedback_cb, 'planning', segment_msg.name, 0.,
+                                         'IK reach boundary: probing maximum extension'))
+                if answer is not None and not stop[0]:
+                    from copy import deepcopy
+                    requested = segment_msg.target_pose
+                    segment_msg = deepcopy(segment_msg)
+                    segment_msg.target_pose = answer['pose']
+                    ik_joints = answer['joints']
+                    if not hasattr(self, '_reach_projections'):
+                        self._reach_projections = []
+                    self._reach_projections.append(dict(name=segment_msg.name,
+                        requested=pose_dict(requested), achieved=pose_dict(answer['pose']),
+                        shortfall_m=answer['shortfall_m']))
         if ik_joints is not None and self._wrist_blocked(
                 current_joints, ik_joints):
             return self._result(

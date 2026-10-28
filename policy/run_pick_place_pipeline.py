@@ -188,6 +188,15 @@ class Pipeline:
         else:
             ok, solution = self.ik.solve_world_pose(point, yaw, orientation_xyzw=orientation_xyzw)
         diagnostics = dict(self.ik.last_diagnostics)
+        if (not ok or solution is None) and self.stage in ('CARRY', 'RETURN'):
+            # Transit may stop at maximum reach. Contact/placement goals stay
+            # exact, and each recorded frame is still checked for collisions.
+            ok, solution = self.ik.solve_reachable_world_pose(
+                point, yaw, orientation_xyzw=orientation_xyzw)
+            diagnostics = dict(self.ik.last_diagnostics)
+            self.trace.write(json.dumps(dict(boundary='reach_projection',
+                stage=self.stage, requested_world=list(map(float, point)),
+                ok=ok, diagnostics=diagnostics)) + '\n')
         self.trace.write(json.dumps(dict(stage=self.stage, target_world=list(map(float, point)),
                                         yaw_rad=yaw, ok=ok, diagnostics=diagnostics)) + "\n")
         self.trace.flush()

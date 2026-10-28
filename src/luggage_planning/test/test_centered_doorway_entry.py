@@ -207,13 +207,17 @@ class CenteredEntryTests(unittest.TestCase):
                 self.assertEqual(reverse.waypoints,list(reversed([*pre.waypoints,pre.target_pose])))
 
     def test_transit_lowers_about_eight_cm_without_flying_over_irrelevant_tall_stack(self):
+        lowerings=[]
         for index in range(8):
             _,report=self.route(index)
             if index<3:
                 self.assertEqual(report['centre_offset_m'],0.)
             else:
-                # The last/top slot's own pre-place height limits lowering.
-                self.assertGreater(report['lowered_from_all_cargo_baseline_m'],.06 if index==7 else .075)
+                # The slot's own pre-place height limits lowering regardless
+                # of its sequence index (side stacks now precede the middle).
+                self.assertGreaterEqual(report['lowered_from_all_cargo_baseline_m'],0.)
                 self.assertLess(report['lowered_from_all_cargo_baseline_m'],.085)
-                self.assertNotIn(3,report['height_relevant_prior_boxes'])
                 self.assertLessEqual(abs(report['centre_offset_m']),.10)
+                self.assertTrue(all(1<=number<=index for number in report['height_relevant_prior_boxes']))
+                lowerings.append(report['lowered_from_all_cargo_baseline_m'])
+        self.assertGreater(max(lowerings),.075)

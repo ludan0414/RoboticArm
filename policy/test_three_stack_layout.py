@@ -11,12 +11,14 @@ class ThreeStackTest(unittest.TestCase):
   result=build_three_stacks(inventory,hull)
   self.assertEqual(len(result),8)
   self.assertEqual(len({i for _,i,_ in result}),8)
-  self.assertEqual([level for _,_,level in result],[1,2,3,1,2,1,2,3])
+  self.assertEqual([level for _,_,level in result],[1,2,3,1,2,3,1,2])
+  self.assertEqual([inventory['box_labels'][index] for _,index,_ in result],
+                   ['red','silver','blue','bronzewhite','black','grey','pink','smallgrey'])
  def test_shifted_layout_keeps_five_centimetres_between_stacks(self):
   inventory=json.loads((Path(__file__).parent/'demo_inputs/site_thirteen_measured.json').read_text(encoding='utf-8'))
   hull=Hull(1.49,1.97,1.48,1.535,.37,.057,1.383,.067,1.479,.53,-.745,-.985)
   result=build_three_stacks(inventory,hull,((.60,.35),(.60,.84),(.60,1.32)))
-  groups=(result[:3],result[3:5],result[5:])
+  groups=(result[:3],result[3:6],result[6:])
   for left_index in range(3):
    for right_index in range(left_index+1,3):
     self.assertTrue(all(lateral_gap(a[0],b[0]) >= .05-1e-7
