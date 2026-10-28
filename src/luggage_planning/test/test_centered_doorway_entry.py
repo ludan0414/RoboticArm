@@ -109,6 +109,25 @@ class CenteredEntryTests(unittest.TestCase):
             self.assertGreaterEqual(b[0]-extent(inside,target.reference_box_size_m,inv)[0],
                                     self.guard.geometry.bounds[0]+.15-1e-9)
 
+    def test_taught_p2_entry_never_reverses_outward_for_any_box(self):
+        inv = tuple(zip(*rotation_matrix(tuple(asdict(self.container.orientation).values()))))
+        def longitudinal(p):
+            point,origin=xyz(p),xyz(self.container)
+            # Horizontal advance toward the doorway; container pitch makes a
+            # pure vertical descent look like a 1cm reverse in 3-D local X.
+            return sum(inv[0][axis]*(point[axis]-origin[axis]) for axis in (0,1))
+        for index,(original,_) in enumerate(self.cycles):
+            with self.subTest(box=index+1):
+                target = lower_final_approach(release_above_support(original))
+                target,_ = self.guard.align_target(target,original.reference_box_size_m,self.container)
+                start = Pose(Point(-.55,.15,1.1), target.box_pose.orientation)
+                route,report = self.entry.build(target,original.reference_box_size_m,self.container,
+                    [t for t,_ in self.cycles[:index]],start_box_pose=start)
+                self.assertEqual(report['start_source'],'measured_p2')
+                self.assertEqual(route.via[0],start)
+                progress=[longitudinal(p) for p in route.via]
+                self.assertTrue(all(b >= a-1e-8 for a,b in zip(progress,progress[1:])),progress[:5])
+
     def test_impossible_width_or_no_inside_pose_fails_closed(self):
         target = self.cycles[5][0]
         with self.assertRaisesRegex(ValueError,'too wide'):

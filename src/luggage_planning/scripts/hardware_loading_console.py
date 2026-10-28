@@ -383,7 +383,8 @@ class CommissioningDriver(HardwarePickDriver):
             if doorway_entry is not None:
                 target, entry_report = doorway_entry.build(target, detection.box_size,
                     self.lookup_pose('world','container_link'),
-                    getattr(self, '_prior_place_targets', ()))
+                    getattr(self, '_prior_place_targets', ()),
+                    start_box_pose=box_pose_from_grasp(actual, grasp))
                 self._doorway_entry_strategy = entry_report['strategy']
                 self.get_logger().info('centred doorway entry: '+json.dumps(entry_report))
             segments = build_place_segments(target, detection, candidate, measured_grasp=grasp)

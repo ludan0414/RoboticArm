@@ -17,6 +17,7 @@ TRANSFER_JOINTS_RAD = tuple(
 )
 TRANSFER_TYPES = ('commissioning_carry_p1', 'commissioning_carry_p2')
 TRANSFER_SETTLE_TOLERANCE_RAD = 0.02
+JOINT_LINE_SAMPLE_RAD = math.radians(1.0)
 
 
 def transfer_segments():
@@ -31,6 +32,28 @@ def target_joint_error(segment_type, actual_joints):
         return None
     return max(abs(float(a) - desired)
                for a, desired in zip(actual_joints, TRANSFER_JOINTS_RAD[index]))
+
+
+def joint_line(start, goal, max_step_rad=JOINT_LINE_SAMPLE_RAD):
+    """Monotone six-joint interpolation; no planner detours or turn wrapping."""
+    if (len(start) != 6 or len(goal) != 6 or max_step_rad <= 0
+            or not all(math.isfinite(float(v)) for v in (*start, *goal))):
+        raise ValueError('invalid taught joint line')
+    count = max(1, math.ceil(max(abs(b-a) for a, b in zip(start, goal)) / max_step_rad))
+    return [tuple(a + (b-a)*i/count for a, b in zip(start, goal))
+            for i in range(count+1)]
+
+
+def on_p1_p2_line(joints, tolerance_rad=0.05):
+    """Allow an interrupted P2 resume only from the taught line itself."""
+    if joints is None or len(joints) != 6:
+        return False
+    a, b = TRANSFER_JOINTS_RAD
+    delta = [v-u for u, v in zip(a,b)]
+    progress = sum((q-u)*d for q,u,d in zip(joints,a,delta)) / sum(d*d for d in delta)
+    if not -0.02 <= progress <= 1.02:
+        return False
+    return max(abs(q-(u+progress*d)) for q,u,d in zip(joints,a,delta)) <= tolerance_rad
 
 
 def execute_transfer(ports, segments, start=0, checkpoint=None):

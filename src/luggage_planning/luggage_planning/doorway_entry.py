@@ -17,6 +17,7 @@ ENTRY_SAMPLE_M = .045
 MAX_TRANSIT_LOWERING_M = .08
 CENTRE_OFFSETS_M = (0., .05, -.05, .10, -.10)
 HORIZONTAL_CARGO_CLEARANCE_M = .03
+P2_FORWARD_CENTRE_STEP_M = .01
 
 
 def xyz(pose):
@@ -52,12 +53,12 @@ def crosses_footprint(start, end, cargo, cargo_size, payload_extent, margin):
 
 
 class CenteredDoorwayEntry:
-    strategy = 'outside_centre_enter_then_lane_v2'
+    strategy = 'p2_centre_enter_then_lane_v3'
 
     def __init__(self, geometry, carry_config=None):
         self.geometry, self.carry_config = geometry, carry_config
 
-    def build(self, target, size, container_pose, prior_targets=()):
+    def build(self, target, size, container_pose, prior_targets=(), start_box_pose=None):
         if len(size) != 3 or any(not math.isfinite(v) or v <= 0 for v in size):
             raise ValueError('DOORWAY_ENTRY: positive finite payload dimensions required')
         origin = xyz(container_pose)
@@ -88,6 +89,17 @@ class CenteredDoorwayEntry:
         # including the measured pickup heading before it matches the route.
         radius = math.sqrt(sum(v*v for v in size))/2
         outside_x = -self.geometry.outer_size[0]/2-margin-radius
+        if start_box_pose is not None:
+            # The taught P2 has already reached the door. Reusing the old
+            # nominal outside point made pre_place reverse toward the robot.
+            # Keep the measured box centre's longitudinal coordinate while
+            # centring laterally, then move monotonically into the container.
+            # Advance 1cm during the lateral/height alignment. With the
+            # measured container pitch, holding 3-D local X exactly fixed
+            # would look like a small outward move in world XY.
+            outside_x = local(start_box_pose)[0] + P2_FORWARD_CENTRE_STEP_M
+            if not outside_x < door_x:
+                raise ValueError('DOORWAY_ENTRY: P2 box centre must be outside door')
         pedestal_bottom = 0.
         config = self.carry_config
         if config is not None:
@@ -115,7 +127,8 @@ class CenteredDoorwayEntry:
             y = nominal_y+offset
             if not y0+margin+local_extent[1] <= y <= y1-margin-local_extent[1]:
                 continue
-            points = [world((outside_x,y,baseline_z)), world((inside_x,y,baseline_z)), xyz(lane)]
+            points = ([xyz(start_box_pose)] if start_box_pose is not None else []) + [
+                world((outside_x,y,baseline_z)), world((inside_x,y,baseline_z)), xyz(lane)]
             bottom = pedestal_bottom
             relevant = []
             for previous, top in zip(cargo, tops):
@@ -140,7 +153,7 @@ class CenteredDoorwayEntry:
         high_lane = replace(lane, position=Point(lane.position.x, lane.position.y,
                                                 max(lane.position.z, inside.position.z)))
         # Explicit dense waypoints preserve the reviewed corner at each phase.
-        route = [outside]
+        route = [start_box_pose, outside] if start_box_pose is not None else [outside]
         for goal in [inside, high_lane, lane]:
             pieces = connect_place_from_pose(route[-1], [MotionSegment(
                 name='doorway_entry', type='cartesian', target_pose=goal)],
@@ -148,6 +161,7 @@ class CenteredDoorwayEntry:
             route.extend(piece.target_pose for piece in pieces)
         return replace(target, via=tuple(route)), dict(
             strategy=self.strategy,
+            start_source='measured_p2' if start_box_pose is not None else 'nominal_outside',
             centre_local_y_m=y, frame_clearance_m=margin,
             nominal_centre_local_y_m=nominal_y, centre_offset_m=center_offset,
             lowered_from_all_cargo_baseline_m=(baseline_z-local_z)*rotation[2][2],
