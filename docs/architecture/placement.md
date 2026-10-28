@@ -225,7 +225,11 @@ it also applies to descent/retreat after finer Cartesian retries are exhausted.
 Release still requires full target success and the existing measured-pose check.
 Lift/retract/high-lift phases, descent, release and retreat remain
 independent boundaries. Successful carry poses may be reversed as a single
-empty Cartesian return; only success consumes the reverse route.
+empty Cartesian return; only success consumes the reverse route. For a
+`return_pick_stop_` segment, incomplete Cartesian coverage must fail closed:
+do not execute a partial prefix or replan joint-space hops between waypoints,
+because either may depart from the recorded return path. Other commissioning
+segments retain the complete-waypoint recovery described above.
 Fallback subgoal results and their trajectories are captured in the motion
 boundary; failed/cancelled subgoals stop the route and preserve vacuum.
 

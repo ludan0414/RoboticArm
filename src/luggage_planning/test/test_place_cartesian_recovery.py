@@ -79,12 +79,33 @@ class PlaceRecoveryTests(unittest.TestCase):
         calls = []
         executor._run_pose_target = lambda segment, *args: (
             calls.append(segment.target_pose) or executor._result(False, 'collision blocked'))
-        segment = NS(name='return_pick_stop_0', type='cartesian', target_pose='home',
+        segment = NS(name='pre_place', type='cartesian', target_pose='home',
                      waypoints=['door'], allow_ompl_fallback=False)
         result = executor._execute_segment_inner(segment, None, 90., [0.]*6)
         self.assertFalse(result.success)
         self.assertEqual(calls, ['door'])
         self.assertIn('collision blocked', result.message)
+
+    def test_incomplete_recorded_return_never_replans_or_executes_prefix(self):
+        executor = self.setup_executor()
+        executor._plan_cartesian = lambda *a: (.792, NS())
+        executor._run_pose_target = lambda *a: self.fail('return must not replan')
+        segment = NS(name='return_pick_stop_0', type='cartesian', target_pose='home',
+                     waypoints=['door'], allow_ompl_fallback=False)
+        result = executor._execute_segment_inner(segment, None, 90., [0.]*6)
+        self.assertFalse(result.success)
+        self.assertEqual(result.fraction, .792)
+        self.assertIn('recorded return path incomplete', result.message)
+
+    def test_blocked_recorded_return_never_uses_fallback_even_if_enabled(self):
+        executor = self.setup_executor()
+        executor._plan_cartesian = lambda *a: (1., NS(occupancy_blocked=True))
+        executor._run_pose_target = lambda *a: self.fail('blocked return must not replan')
+        segment = NS(name='return_pick_stop_0', type='cartesian', target_pose='home',
+                     waypoints=['door'], allow_ompl_fallback=True)
+        result = executor._execute_segment_inner(segment, None, 90., [0.]*6)
+        self.assertFalse(result.success)
+        self.assertIn('recorded return path blocked', result.message)
 
     def test_cancelled_route_never_starts_a_replan(self):
         executor = self.setup_executor()

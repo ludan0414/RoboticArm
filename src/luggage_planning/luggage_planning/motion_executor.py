@@ -434,6 +434,10 @@ class MotionExecutor:
             if not math.isfinite(fraction) or not 0. <= fraction <= 1.:
                 return self._result(False, 'invalid Cartesian planner fraction', 0.)
             if not occupancy_blocked and not wrist_singular and fraction < 1.:
+                if str(segment_msg.name).startswith('return_pick_stop_'):
+                    return self._result(False,
+                        '%s: recorded return path incomplete (fraction %.3f); no alternate route executed' %
+                        (segment_msg.name, fraction), fraction)
                 # Site requests automatically recover incomplete Cartesian
                 # geometry, including routes whose legacy fallback flag is
                 # false. Never execute a partial prefix or skip route poses.
@@ -442,6 +446,10 @@ class MotionExecutor:
                                              execute_timeout, current_joints, fraction, plan)
             need_fallback = occupancy_blocked or wrist_singular
             if need_fallback:
+                if str(segment_msg.name).startswith('return_pick_stop_'):
+                    return self._result(False,
+                        '%s: recorded return path blocked; no alternate route executed' % segment_msg.name,
+                        fraction)
                 if occupancy_blocked:
                     why = "occupancy blocked"
                 elif wrist_singular:
