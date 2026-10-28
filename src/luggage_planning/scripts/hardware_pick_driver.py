@@ -179,8 +179,10 @@ class RosPickSessionPorts:
                 from copy import deepcopy
                 from luggage_planning.pose import Pose, Point, Quaternion
                 segment = deepcopy(segment)
+                # The observer appends the final freshly measured TCP itself.
+                # Only intermediate achieved hops belong in waypoints.
                 segment.waypoints = [Pose(Point(**pose['position']), Quaternion(**pose['orientation']))
-                                     for pose in settled.get('executed_transit_poses', [])]
+                                     for pose in settled.get('executed_transit_poses', [])[:-1]]
             observer(segment)
         return SegmentOutcome(
             ok=ok, message=message,

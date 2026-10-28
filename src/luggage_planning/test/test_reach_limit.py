@@ -89,7 +89,7 @@ class ReachLimitTests(unittest.TestCase):
         ports=scope['RosPickSessionPorts']()
         observed=[]
         payload=json.dumps(dict(reach_projections=[dict(shortfall_m=1.)],
-            executed_transit_poses=[pose_dict(Pose(Point(2,0,0)))]))
+            executed_transit_poses=[pose_dict(Pose(Point(1,0,0))),pose_dict(Pose(Point(2,0,0)))]))
         ports._driver=NS(segment_guard=None,report_stage=lambda *a:None,_plan=None,
             _args=NS(plan_timeout=45),record_completed_motion=observed.append,
             _send_action=lambda *a:(True,'done',NS(fraction=1.,settle_json=payload)))
@@ -97,7 +97,7 @@ class ReachLimitTests(unittest.TestCase):
         original=MotionSegment(name='pre_place',type='cartesian',target_pose=Pose(Point(3,0,0)),
                                waypoints=[Pose(Point(2.5,0,0))])
         self.assertTrue(ports.execute_segment(original,'box').ok)
-        self.assertEqual(observed[0].waypoints[0].position.x,2.)
+        self.assertEqual([pose.position.x for pose in observed[0].waypoints],[1.])
         self.assertEqual(original.waypoints[0].position.x,2.5)
 
 
