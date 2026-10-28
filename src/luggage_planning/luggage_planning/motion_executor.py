@@ -13,7 +13,7 @@ Segment routing (docs/plans/closed_loop_pick_retreat_nodes.md):
     cartesian    -> GetCartesianPath geometry, wrist gate, excursion diagnostics,
                     occupancy sweep, then rest-to-rest ExecuteTrajectory
     commissioning_home -> hardcoded photographed J1..J6 via MoveGroup joint goal
-    commissioning_carry_p2 -> sampled monotone taught joint line
+    commissioning_carry_p2 -> collision-bypassed TCP line between taught poses
     named pose   -> handled by the node via plain FJT (see motion_planner_node)
 
 ``keep_tool_down`` adds an orientation constraint (tool Z down).
@@ -54,8 +54,6 @@ from moveit_msgs.msg import (
     PositionIKRequest,
 )
 from moveit_msgs.srv import GetCartesianPath, GetPositionFK, GetPositionIK
-from moveit_msgs.msg import RobotTrajectory
-from trajectory_msgs.msg import JointTrajectoryPoint
 from shape_msgs.msg import SolidPrimitive
 
 # Tool-Z (suction normal) pointing at world -Z: quaternion (x=1, w=0).
@@ -435,7 +433,7 @@ class MotionExecutor:
         if seg_type in TRANSFER_TYPES:
             index = TRANSFER_TYPES.index(seg_type)
             if index == 1:
-                return self._run_taught_joint_line(
+                return self._run_taught_tcp_line(
                     list(TRANSFER_JOINTS_RAD[index]), feedback_cb,
                     execute_timeout, current_joints, segment_msg)
             return self._run_joint_goal(
@@ -622,34 +620,79 @@ class MotionExecutor:
             wrapped, feedback_cb, execute_timeout, "named joint goal")
         return self._stamp_boundary(result, "named_joint")
 
-    def _run_taught_joint_line(self, target, feedback_cb, execute_timeout,
-                               current_joints, segment_msg):
-        """P1->P2 follows the operator-taught joint line without scene collision checks."""
-        from luggage_planning.manual_carry_transfer import joint_line, on_p1_p2_line
+    def _run_taught_tcp_line(self, target, feedback_cb, execute_timeout,
+                             current_joints, segment_msg):
+        """Carry TCP in a straight line from P1 to P2, with scene checks off."""
+        from luggage_planning.manual_carry_transfer import TRANSFER_JOINTS_RAD
         if current_joints is None or len(current_joints) != len(JOINTS):
-            return self._result(False, 'CARRY_JOINT_LINE: current joints unavailable')
-        if not on_p1_p2_line(current_joints):
-            return self._result(False, 'CARRY_JOINT_LINE: start is off taught P1-P2 line; carry-home required')
+            return self._result(False, 'CARRY_TCP_LINE: current joints unavailable')
         if self._wrist_blocked(current_joints, target):
-            return self._result(False, 'CARRY_JOINT_LINE: wrist branch change')
-        try:
-            points = joint_line(current_joints, target)
-        except ValueError as exc:
-            return self._result(False, 'CARRY_JOINT_LINE: '+str(exc))
+            return self._result(False, 'CARRY_TCP_LINE: wrist branch change')
+        p1 = self._fk_pose(TRANSFER_JOINTS_RAD[0])
+        p2 = self._fk_pose(target)
+        actual = self._fk_pose(current_joints)
+        if p1 is None or p2 is None or actual is None:
+            return self._result(False, 'CARRY_TCP_LINE: FK unavailable')
+        a = p1.position
+        b = p2.position
+        c = actual.position
+        direction = (b.x-a.x, b.y-a.y, b.z-a.z)
+        length_sq = sum(v*v for v in direction)
+        if length_sq < 1e-6:
+            return self._result(False, 'CARRY_TCP_LINE: taught poses coincide')
+        from_p1 = (c.x-a.x, c.y-a.y, c.z-a.z)
+        progress = sum(v*d for v,d in zip(from_p1, direction)) / length_sq
+        distance = math.sqrt(sum((v-progress*d)**2 for v,d in zip(from_p1, direction)))
+        if not -0.02 <= progress <= 1.02 or distance > 0.02:
+            return self._result(False, 'CARRY_TCP_LINE: start is off taught TCP line; carry-home required')
+        request = GetCartesianPath.Request()
+        request.header.frame_id = self._frame
+        request.group_name = self._group
+        request.link_name = self._link
+        request.start_state.is_diff = True
+        request.start_state.joint_state.name = list(JOINTS)
+        request.start_state.joint_state.position = [float(v) for v in current_joints]
+        request.waypoints = [p2]
+        request.max_step = min(self._max_step, 0.01)
+        request.jump_threshold = 0.0
+        request.avoid_collisions = False
+        if not self._cartesian.wait_for_service(timeout_sec=3.0):
+            return self._result(False, 'CARRY_TCP_LINE: Cartesian service unavailable')
         self._notify(feedback_cb, 'planning', segment_msg.name, 0.0,
-                     'executing %d taught joint samples' % len(points))
-        trajectory = RobotTrajectory()
-        trajectory.joint_trajectory.joint_names = list(JOINTS)
-        trajectory.joint_trajectory.points = [
-            JointTrajectoryPoint(positions=list(positions)) for positions in points]
-        measurement = self._wrist_check(trajectory.joint_trajectory.points, JOINTS)
+                     'planning collision-bypassed taught TCP line')
+        response = self._wait_future(self._cartesian.call_async(request), 20.0)
+        if response is None:
+            return self._result(False, 'CARRY_TCP_LINE: Cartesian service timeout')
+        if float(response.fraction) < 0.999:
+            return self._result(False, 'CARRY_TCP_LINE: incomplete Cartesian path %.3f' % response.fraction)
+        trajectory = response.solution
+        points = trajectory.joint_trajectory.points
+        if not points or len(points[-1].positions) != len(JOINTS):
+            return self._result(False, 'CARRY_TCP_LINE: empty Cartesian solution')
+        if max(abs(float(a)-float(b)) for a,b in zip(points[-1].positions, target)) > 0.05:
+            return self._result(False, 'CARRY_TCP_LINE: endpoint differs from taught P2 joints')
+        measurement = self._wrist_check(points, trajectory.joint_trajectory.joint_names)
         if measurement is not None and not measurement['ok']:
-            return self._result(False, 'CARRY_JOINT_LINE: wrist singularity')
+            return self._result(False, 'CARRY_TCP_LINE: wrist singularity')
         result = self._execute_robot_trajectory(
             trajectory, segment_msg.name, 1.0, feedback_cb, execute_timeout)
         if result.success:
-            result.message = 'taught joint line ok (%d states)' % len(points)
+            result.message = 'taught TCP line ok (%d states)' % len(points)
         return result
+
+    def _fk_pose(self, joints):
+        """Get the TCP pose in the planning frame for a measured joint state."""
+        if not self._fk.wait_for_service(timeout_sec=2.0):
+            return None
+        request = GetPositionFK.Request()
+        request.header.frame_id = self._frame
+        request.fk_link_names = [self._link]
+        request.robot_state.joint_state.name = list(JOINTS)
+        request.robot_state.joint_state.position = [float(v) for v in joints]
+        response = self._wait_future(self._fk.call_async(request), 2.0)
+        if response is None or int(response.error_code.val) != int(MoveItErrorCodes.SUCCESS):
+            return None
+        return response.pose_stamped[0].pose if response.pose_stamped else None
 
     def _run_joint_goal(self, positions, feedback_cb, execute_timeout, note,
                         seed_joints=None, enforce_wrist=True, segment_msg=None):
