@@ -467,8 +467,10 @@ def generate_launch_description():
                     "default_observe_pose": LaunchConfiguration("observe_pose_name"),
                     "named_pose_duration": 8.0,
                     "named_pose_max_vel": 1.0,
-                    "velocity_scaling": 0.15,
-                    "acceleration_scaling": 0.10,
+                    # Double the old 13.5deg/s ceiling. The retimer and ServoJ
+                    # still enforce the site's 20deg/s² acceleration limit.
+                    "velocity_scaling": 0.30,
+                    "acceleration_scaling": 0.30,
                     # Extra excursion heuristics are advisory for this real
                     # cell. MoveIt limits/collisions and wrist checks remain.
                     "max_segment_joint_excursion_rad": 0.0,

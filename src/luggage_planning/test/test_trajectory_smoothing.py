@@ -1,5 +1,6 @@
 """Actual planner timing -> actual ServoJ grid, without ROS or hardware."""
 import ast
+import json
 from pathlib import Path
 from types import SimpleNamespace
 import math
@@ -35,7 +36,10 @@ class SmoothTimingTests(unittest.TestCase):
         velocity, acceleration = hermite_peaks(positions, timed)
         self.assertLessEqual(acceleration, math.radians(20))
         self.assertLessEqual(velocity, base.v_max)
-        self.assertTrue(any(abs(v) > 0 for v in timed.velocities_rad[2]))
+        self.assertTrue(any(abs(v) > 0 for v in timed.velocities_rad[1]))
+        # A right-angle corner has no common tangent. Stop there without
+        # slowing all the collinear portions to its speed.
+        self.assertEqual(timed.velocities_rad[2], [0.]*6)
         grid, reason = fjt_to_servo_j_deg(positions, timed.times_s, dt_s=.02,
                                          velocities_rad=timed.velocities_rad)
         self.assertIsNone(reason)
@@ -54,6 +58,52 @@ class SmoothTimingTests(unittest.TestCase):
         for value in (0., 1.1, float('nan'), True, '0.5'):
             with self.assertRaises(ValueError):
                 smooth_timing(positions, base, value)
+
+    def test_recorded_carry_is_twice_as_fast_without_executor_dilation(self):
+        fixture = Path(__file__).parent / 'data/carry_speed_replay.json'
+        cases = json.loads(fixture.read_text())['cases']
+        previous_total = new_total = 0.
+        for case in cases:
+            with self.subTest(case=case['name']):
+                positions = case['positions']
+                timed = smooth_timing(positions, time_parameterize_cartesian(positions, .3, .3))
+                velocity, acceleration = hermite_peaks(positions, timed)
+                self.assertLessEqual(velocity, 1.57*.3)
+                self.assertLessEqual(acceleration, math.radians(20))
+                grid, reason = fjt_to_servo_j_deg(positions, timed.times_s, dt_s=.02,
+                                                velocities_rad=timed.velocities_rad)
+                self.assertIsNone(reason)
+                self.assertEqual(limit_servo_braking(grid, .02), grid)
+                self.assertEqual(len(timed.times_s), len(positions))
+                if case['name'] == 'pre_place':
+                    self.assertLessEqual(timed.duration, case['previous_duration_s']/2)
+                previous_total += case['previous_duration_s']
+                new_total += timed.duration
+        self.assertLessEqual(new_total, previous_total/2)
+
+    def test_local_corner_interpolation_has_no_joint_overshoot(self):
+        positions = [q(0), q(.1), q(.2), q(.2, .1), q(.2, .2)]
+        timed = smooth_timing(positions, time_parameterize_cartesian(positions, .3, .3))
+        for i, (before, after) in enumerate(zip(positions, positions[1:])):
+            duration = timed.times_s[i+1]-timed.times_s[i]
+            for j, (a, b) in enumerate(zip(before, after)):
+                for sample in range(101):
+                    u = sample/100
+                    value = ((2*u**3-3*u**2+1)*a + (-2*u**3+3*u**2)*b
+                             + (u**3-2*u**2+u)*duration*timed.velocities_rad[i][j]
+                             + (u**3-u**2)*duration*timed.velocities_rad[i+1][j])
+                    self.assertGreaterEqual(value, min(a,b)-1e-12)
+                    self.assertLessEqual(value, max(a,b)+1e-12)
+
+    def test_local_iteration_failure_uses_bounded_uniform_fallback(self):
+        from unittest.mock import patch
+        positions = [q(0), q(.1), q(.2, .1)]
+        base = time_parameterize_cartesian(positions, .3, .3)
+        with patch('luggage_planning.trajectory_smoothing._local_timing', return_value=None):
+            timed = smooth_timing(positions, base)
+        velocity, acceleration = hermite_peaks(positions, timed)
+        self.assertLessEqual(velocity, base.v_max)
+        self.assertLessEqual(acceleration, math.radians(20))
 
     def test_production_retimer_removes_duplicate_knots_before_interpolation(self):
         path = Path(__file__).resolve().parents[1] / 'luggage_planning/motion_executor.py'

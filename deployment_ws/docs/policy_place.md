@@ -28,14 +28,16 @@ Numbers above illustrate the schema; they are not a measured site target.
 `clearance_m` defaults to 0.15 and must be at least 0.05. It offsets pre-place
 and retreat in world +Z. Each optional `via_box_poses` item has `position_m`
 and `orientation_xyzw` and is executed in order before pre-place. Use these
-to retain the policy's doorway/cargo routing. Cartesian segments require
-fraction 1.0; a partial trajectory is never executed. Via and pre-place segments
-may fall back to a complete collision-checked MoveIt pose-goal plan with the
-payload attached. This can depart from the Cartesian chord and is recorded as
-an OMPL fallback. Without via poses, pre-place is already a MoveIt pose goal.
-Final descent and retreat remain Cartesian with no OMPL fallback. A partial
-final descent is replanned at half and quarter interpolation step before
-failing; no partial prefix is executed, and no release occurs after failure.
+to retain the policy's doorway/cargo routing. Incomplete Cartesian coverage
+no longer fails solely because fraction is below1: discard the partial prefix
+and automatically execute complete collision-checked MoveIt pose goals through
+all original via poses and the final target, in order, with the payload attached.
+The legacy fallback=false flag does not disable this recovery. This can depart
+from Cartesian chords and is recorded as an OMPL fallback, including each
+subgoal's trajectory/result in the motion boundary. Final descent first retries
+half and quarter Cartesian interpolation step; if still incomplete, it uses
+the same full-goal recovery. Descent/retreat targets remain separate actions;
+failed or cancelled full goals still stop, preserve vacuum and prevent release.
 Carry errors include the failing segment name. A fraction alone cannot tell
 whether the cause was IK, collision, or a singularity; preserve the boundary
 trace when diagnosing a real-robot failure.

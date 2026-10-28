@@ -373,6 +373,10 @@ class MotionExecutor:
         if self._cartesian_excursion is not None:
             self._last_boundary["cartesian_excursion"] = dict(
                 self._cartesian_excursion)
+        if getattr(self, '_cartesian_recovery', None):
+            self._last_boundary['cartesian_recovery'] = self._cartesian_recovery
+        if getattr(self, '_cartesian_partial', None) is not None:
+            self._last_boundary['discarded_cartesian_prefix'] = self._cartesian_partial
         if self._occupancy is not None:
             from luggage_planning.occupancy_place_paths import (
                 occupancy_collision_boxes)
@@ -398,6 +402,8 @@ class MotionExecutor:
         self._cancel_check = cancel_check
         self._planned_traj = None
         self._cartesian_excursion = None
+        self._cartesian_recovery = []
+        self._cartesian_partial = None
         self._start_joints = list(current_joints or [])
         try:
             result = self._execute_segment_inner(
@@ -425,21 +431,21 @@ class MotionExecutor:
                 return self._result(False, "compute_cartesian_path timeout", 0.0)
             occupancy_blocked = bool(getattr(plan, "occupancy_blocked", False))
             wrist_singular = bool(getattr(plan, "wrist_singular", False))
-            required = max(
-                self._min_fraction,
-                float(getattr(segment_msg,
-                              "required_cartesian_fraction", 0.0) or 0.0))
-            need_fallback = (
-                occupancy_blocked or wrist_singular
-                or fraction < required)
+            if not math.isfinite(fraction) or not 0. <= fraction <= 1.:
+                return self._result(False, 'invalid Cartesian planner fraction', 0.)
+            if not occupancy_blocked and not wrist_singular and fraction < 1.:
+                # Site requests automatically recover incomplete Cartesian
+                # geometry, including routes whose legacy fallback flag is
+                # false. Never execute a partial prefix or skip route poses.
+                from luggage_planning.cartesian_recovery import replan_complete_route
+                return replan_complete_route(self, segment_msg, feedback_cb,
+                                             execute_timeout, current_joints, fraction, plan)
+            need_fallback = occupancy_blocked or wrist_singular
             if need_fallback:
                 if occupancy_blocked:
                     why = "occupancy blocked"
                 elif wrist_singular:
                     why = plan.reason
-                else:
-                    why = "cartesian %.3f < %.3f" % (
-                        fraction, required)
                 # A complete Cartesian requirement rejects partial execution;
                 # it does not prohibit a separately planned complete pose goal.
                 if segment_msg.allow_ompl_fallback:
@@ -460,11 +466,6 @@ class MotionExecutor:
                 if wrist_singular:
                     return self._result(
                         False, "PLACE_PATH_WRIST_SINGULAR %s" % why, fraction)
-                return self._result(
-                    False,
-                    "%s: cartesian fraction %.3f below %.3f and no OMPL fallback"
-                    % (segment_msg.name, fraction, required),
-                    fraction)
             if self._occupancy is not None:
                 ok, sweep_msg = self._occupancy_ok_plan(plan, segment_msg)
                 if not ok:
@@ -575,6 +576,8 @@ class MotionExecutor:
         """MoveIt joint-space plan/execute to ``positions`` (rad, JOINTS order)."""
         wrapped = list(positions)
         self._planned_traj = None
+        self._cartesian_recovery = []
+        self._cartesian_partial = None
         self._start_joints = list(current_joints or [])
         if current_joints and len(current_joints) == len(JOINTS):
             wrapped = [
@@ -902,7 +905,8 @@ class MotionExecutor:
             return self._result(
                 False, "ExecuteTrajectory goal rejected", fraction)
         from luggage_planning.trajectory_smoothing import execution_timeout
-        wrapped = self._wait_goal(handle, execution_timeout(goal.trajectory, execute_timeout))
+        wrapped = self._wait_goal(handle, execution_timeout(goal.trajectory, execute_timeout),
+                                  heartbeat=lambda: self._notify(feedback_cb, "executing", name, fraction))
         if wrapped is None:
             handle.cancel_goal()
             return self._result(False, "ExecuteTrajectory timeout", fraction)
@@ -1076,7 +1080,8 @@ class MotionExecutor:
             return SegmentExecResult(
                 False, "ExecuteTrajectory goal rejected", fraction)
         from luggage_planning.trajectory_smoothing import execution_timeout
-        wrapped = self._wait_goal(handle, execution_timeout(goal.trajectory, execute_timeout))
+        wrapped = self._wait_goal(handle, execution_timeout(goal.trajectory, execute_timeout),
+                                  heartbeat=lambda: self._notify(feedback_cb, "executing", segment_msg.name, fraction))
         if wrapped is None:
             handle.cancel_goal()
             return SegmentExecResult(
@@ -1136,30 +1141,39 @@ class MotionExecutor:
             return None
         return future.result()
 
-    def _wait_goal(self, handle, timeout_sec):
+    def _wait_goal(self, handle, timeout_sec, heartbeat=None):
         """Wait for an accepted goal. Timeout is sim seconds when use_sim_time."""
         event = threading.Event()
         future = handle.get_result_async()
         future.add_done_callback(lambda _f: event.set())
         watcher = None
-        if self._cancel_check is not None:
+        stop_watcher = threading.Event()
+        if self._cancel_check is not None or heartbeat is not None:
             def _watch():
-                while not event.wait(0.2):
+                while not stop_watcher.wait(0.2):
+                    if event.is_set():
+                        return
                     try:
-                        if self._cancel_check():
+                        if self._cancel_check is not None and self._cancel_check():
                             handle.cancel_goal()
                             return
+                        if heartbeat is not None:
+                            heartbeat()
                     except Exception:  # noqa: BLE001 - watcher must not leak
                         return
             watcher = threading.Thread(target=_watch, daemon=True)
             watcher.start()
-        reached, _reason = wait_event(
-            event, timeout_sec, clock=self._node.get_clock())
+        try:
+            reached, _reason = wait_event(
+                event, timeout_sec, clock=self._node.get_clock())
+        finally:
+            stop_watcher.set()
+            if watcher is not None:
+                watcher.join(timeout=0.5)
         if not reached:
-            if watcher is not None and watcher.is_alive():
-                try:
-                    handle.cancel_goal()
-                except Exception:  # noqa: BLE001 - best-effort cancel
-                    pass
+            try:
+                handle.cancel_goal()
+            except Exception:  # noqa: BLE001 - best-effort cancel
+                pass
             return None
         return future.result()

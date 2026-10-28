@@ -85,6 +85,17 @@ class AdapterTests(unittest.TestCase):
         self.ports.pick_place(2)
         self.assertEqual(observed,[(target,(.55,.36,.23),'/tmp/loading.jsonl.box003.jsonl')])
 
+    def test_place_failure_exposes_segment_reason_in_console_fault(self):
+        self.ports.cycles = [(SimpleNamespace(reference_box_size_m=(.67,.43,.26)), ())]
+        self.ports.journal = SimpleNamespace(name='/tmp/loading.jsonl')
+        reason = 'PLACE_CARRY_FAULT [pre_place]: ExecuteTrajectory error_code=-4'
+        def failed_run():
+            self.driver._last_place_reason = reason
+            return 10
+        self.driver.run = failed_run
+        with self.assertRaisesRegex(RuntimeError, 'pick/place exit 10: .*pre_place.*error_code=-4'):
+            self.ports.pick_place(0)
+
     def test_seal_records_actual_tool_tf_instead_of_candidate_orientation(self):
         from luggage_planning.policy_place import box_pose_from_grasp
         module = load_console()

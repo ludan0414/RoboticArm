@@ -180,6 +180,8 @@ class TrajectoryExecutorNode(Node):
         self._status_pub = self.create_publisher(String, STATUS_TOPIC, _LATCHED)
         self._events_pub = self.create_publisher(String, EVENTS_TOPIC, _LATCHED)
         self._hw_pub = self.create_publisher(String, HARDWARE_STATUS_TOPIC, _LATCHED)
+        self._telemetry_pub = self.create_publisher(String, '/elfin/cps_telemetry', 100)
+        self._command_pub = self.create_publisher(String, '/trajectory_executor/command', 10)
         self._last_status = "idle"
         if mode == 'real':
             self._vacuum_pub = VacuumIoPublisher(self)
@@ -333,6 +335,12 @@ class TrajectoryExecutorNode(Node):
 
         traj = goal_handle.request.trajectory
         ordered_traj = self._reorder_trajectory(traj)
+        from .runtime_recording import command_record
+        def record_command(path=None, period=None, hold=None):
+            payload = command_record(ordered_traj, goal_id, self.get_clock().now().nanoseconds,
+                                     servo_grid_deg=path, servo_time=period, hold_count=hold)
+            self._command_pub.publish(String(data=json.dumps(payload)))
+        record_command()
 
         def feedback_fn(positions: List[float]) -> None:
             """Called by the backend at ~100 Hz with current positions."""
@@ -362,6 +370,7 @@ class TrajectoryExecutorNode(Node):
                         cancel_flag,
                         servo_time=self._servo_j_servo_time,
                         lookahead_time=self._servo_j_lookahead_time,
+                        plan_callback=record_command,
                     )
             else:
                 ret = self._iface.execute(ordered_traj, feedback_fn, cancel_flag)
@@ -436,6 +445,10 @@ class TrajectoryExecutorNode(Node):
         """Publish this tick's CPS actual joints. Skip if the ACS read failed."""
         if callable(getattr(self._iface, "refresh", None)):
             self._iface.refresh()
+        if hasattr(self._iface, 'last_acs_ok'):
+            from .runtime_recording import hardware_sample
+            payload = hardware_sample(self._iface, self.get_clock().now().nanoseconds)
+            self._telemetry_pub.publish(String(data=json.dumps(payload)))
         if hasattr(self._iface, "last_acs_ok") and not self._iface.last_acs_ok:
             return
         positions = self._iface.current_positions

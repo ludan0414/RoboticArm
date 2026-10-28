@@ -812,6 +812,7 @@ class HuayanInterface:
         cancel_flag: threading.Event,
         servo_time: float = 0.02,
         lookahead_time: float = 0.1,
+        plan_callback=None,
     ) -> int:
         """Stream ServoJ using a session independent of application READY.
 
@@ -869,6 +870,10 @@ class HuayanInterface:
             return RESULT_INVALID_GOAL
         hold_n = servo_j_hold_count(lookahead_time, servo_time)
         stream = list(path) + [list(path[-1])] * hold_n
+        if plan_callback is not None:
+            # Capture the exact validated grid after the existing limiter,
+            # once per goal. No disk IO or extra CPS reads in the push loop.
+            plan_callback([list(q) for q in path], servo_time, hold_n)
         if not self._ensure_connected():
             return RESULT_ERROR
         fsm_id, fsm_desc = self._read_fsm()

@@ -2,7 +2,9 @@
 
 One Cartesian action carries the ordered poses through GetCartesianPath and
 the normal attached-payload collision checks. No spline is fit to pose corners,
-no waypoint is discarded and no independent action is sent per sample.
+no waypoint is discarded and no independent action is sent per sample on the
+normal complete path. Incomplete geometry uses cartesian_recovery to reach
+every original sample with separately checked full-goal plans.
 """
 from copy import deepcopy
 from dataclasses import replace

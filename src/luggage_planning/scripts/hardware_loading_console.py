@@ -95,6 +95,7 @@ pre{white-space:pre-wrap;font-size:13px}
 @media(max-width:800px){.grid{grid-template-columns:1fr}}
 </style>
 <h1>真机逐箱操作台 · 现场调试模式</h1>
+<p id="recording-status"></p>
 <p>初始化可选：归到照片中的固定关节位，或跳过并从当前位置开始。每次 Pick 自动抓取、放置、松吸、退舱、归位。</p>
 <p>尚无自动扫舱、视觉放置验收或地图提交。占位仅供避障，并非实测货舱地图。</p>
 <div class="grid">
@@ -156,6 +157,11 @@ function txt(id,v){document.getElementById(id).textContent=v==null||v===''?'—'
 function paint(id,sev){document.getElementById(id).className='card '+(sev||'unknown');}
 function ago(mono,now){if(!mono)return '—';const d=now-mono;if(d<0)return '0.0s';return d.toFixed(1)+'s 前';}
 function render(){
+  const rec=current.recording||{};
+  txt('recording-status',rec.error?('录制错误：'+rec.error):
+      ('连续录制：'+(rec.path||'等待启动')+
+       ((rec.missing||[]).length?' · 缺少数据：'+rec.missing.join(', '):'')+
+       ((rec.stale||[]).length?' · 数据已过期：'+rec.stale.join(', '):'')));
   const hw=current.hardware||{};
   const ev=current.executor_event||{};
   const vac=current.vacuum||{};
@@ -452,6 +458,9 @@ class HardwarePorts:
 
     def record(self, event):
         record = {"time": time.time(), "session": self.session, **event}
+        recorder = getattr(self.driver, 'telemetry_recorder', None)
+        if recorder is not None:
+            recorder.write('console', record)
         self.driver.get_logger().info("loading_event: " + json.dumps(record, default=str))
         self.journal.write(json.dumps(record) + "\n")
         self.journal.flush()
@@ -586,13 +595,15 @@ class HardwarePorts:
         if hasattr(self.driver, '_effective_place_target'):
             del self.driver._effective_place_target
         self.driver._measured_grasp = None
+        self.driver._last_place_reason = ''
         self.driver._doorway_carrying=False
         self.driver.placed_proxy_id = "expected_placed_%s_%d" % (self.session, index)
         # Separate trace per absolute box number; retries overwrite that box's trace.
         self.driver._args.trace_out = "%s.box%03d.jsonl" % (self.journal.name, index + 1)
         code = self.driver.run()
         if code != 0:
-            raise RuntimeError("pick/place exit %d; explicit recovery required" % code)
+            reason = self.driver._last_place_reason or 'see box trace for pick failure'
+            raise RuntimeError("pick/place exit %d: %s; explicit recovery required" % (code, reason))
         ok, message = self.driver._scene_client().set_acm_pairs(
             [(self.driver.placed_proxy_id, link)
              for link in self.driver.release_touch_links], False)
@@ -644,6 +655,8 @@ def main(argv=None):
     driver.carry_entry_config = carry_config
     driver.segment_guard = driver.guard_segment
     driver.detection_guard = driver.guard_detection
+    from luggage_planning.recording_ros import attach_recorder
+    driver.telemetry_recorder = attach_recorder(driver, cli.journal, session)
     ports = HardwarePorts(driver, observe, cycles, journal, session)
     ports.record(dict(event="session", profile_sha256=hashlib.sha256(raw_profile).hexdigest(),
                       profile=json.loads(raw_profile), session=session, start_box=cli.start_box))
@@ -697,6 +710,7 @@ def main(argv=None):
             elif self.path == "/status":
                 snapshot = cycle.snapshot()
                 snapshot['speed'] = speed.snapshot()
+                snapshot['recording'] = driver.telemetry_recorder.status()
                 snapshot["reset_target"] = dict(type=HOME_SEGMENT_TYPE,
                                                 joints_deg=HOME_JOINTS_DEG)
                 profile = json.loads(raw_profile)
@@ -743,6 +757,7 @@ def main(argv=None):
         # Never release suction or initiate a return on shutdown. Hardware e-stop
         # remains the stop mechanism; HTTP and Ctrl-C are not an emergency stop.
         server.server_close()
+        driver.telemetry_recorder.close()
         if cycle.worker is not None and cycle.worker.is_alive():
             print("Active cycle interrupted: use physical stop and explicit recovery.", flush=True)
             os._exit(2)

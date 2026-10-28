@@ -215,19 +215,48 @@ scored path set (`RS-27`).
 ## Continuous commissioning motion
 
 The commissioning console sends compatible carry-phase samples as ordered
-Cartesian waypoints in one action. It preserves full-path collision checking
-and fraction1; it does not replace a failed multi-point path with a direct OMPL
-shortcut. Lift/retract/high-lift phases, descent, release and retreat remain
+Cartesian waypoints in one action. A complete Cartesian path uses the existing
+collision checks. Incomplete coverage automatically falls back to complete
+collision-checked IK/joint goals through every original waypoint in order,
+even when the legacy allow_ompl_fallback flag is false. Never execute the
+Cartesian partial prefix or shortcut directly past the route's via poses.
+This fallback can depart from Cartesian chords and may stop at each pose;
+it also applies to descent/retreat after finer Cartesian retries are exhausted.
+Release still requires full target success and the existing measured-pose check.
+Lift/retract/high-lift phases, descent, release and retreat remain
 independent boundaries. Successful carry poses may be reversed as a single
 empty Cartesian return; only success consumes the reverse route.
+Fallback subgoal results and their trajectories are captured in the motion
+boundary; failed/cancelled subgoals stop the route and preserve vacuum.
 
 Operator speed_scale is10..100% of existing planned tempo and is captured once
 per PlanMotion. Apply it to the full trajectory time law before ExecuteTrajectory
-so MoveIt sees the slowed duration. Preserve nonzero intermediate velocities;
-bound actual cubic-Hermite velocity/acceleration analytically, including corners.
+so MoveIt sees the slowed duration. Hardware launch uses velocity/acceleration
+scaling 0.30/0.30 (about 27deg/s, capped to 20deg/s²). Compare uniform
+time dilation with locally dilated, monotone joint Hermite interpolation and
+choose the shorter analytically bounded result. Keep every geometric knot;
+local interpolation must not overshoot either endpoint of any joint interval.
+Intermediate velocities stay continuous, with zero velocity at joint reversals.
+Bound actual cubic-Hermite velocity/acceleration analytically, including corners.
 Neither UI tempo nor continuous execution relaxes collision, payload or existing
 hardware dynamics limits. Speed changes require an idle/fault console and typed
 ROS parameter readback before confirmation.
+
+PlanMotion clients use phase-feedback inactivity deadlines, not a total
+per-waypoint timeout for a continuous route. The executor publishes waiting
+heartbeats only within its bounded ExecuteTrajectory wait, whose deadline is
+derived from the planned duration. Feedback proves liveness only; success
+requires the final action result. Missing feedback cancels the client goal;
+server timeout/failure still propagates and preserves the held payload.
+Console faults include the originating place stage and reason.
+
+Commissioning sessions record passive telemetry by default in a unique
+session JSONL, independently of overwriteable per-box traces. Record actual
+joints, currents in ampere, field-validity flags, source and receipt timestamps,
+vacuum feedback, controller errors, original requests and full command grids.
+Use the executor's existing CPS connection and already-read samples; do not
+open a separate monitor connection or infer missing actual samples from plans.
+Preserve deployed dirty sources, topic coverage and file errors for diagnosis.
 
 ## Replay / redesign path (not the live node)
 

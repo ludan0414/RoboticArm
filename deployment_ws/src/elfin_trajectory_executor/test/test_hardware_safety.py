@@ -196,12 +196,14 @@ class HardwareSafetyTest(unittest.TestCase):
         iface._controller_limit_fraction = 0.8
         iface._read_fsm = lambda: (33, "RobotStandBy")
 
+        recorded_plans = []
         result = iface.execute_servo_j_path(
             [[0.0] * 6, [1.0, 0.0, 0.0, 0.0, 0.0, 0.0]],
             feedback_fn=lambda _positions: None,
             cancel_flag=threading.Event(),
             servo_time=0.001,
             lookahead_time=0.01,
+            plan_callback=lambda grid, period, holds: recorded_plans.append((grid, period, holds)),
         )
 
         self.assertEqual(result, RESULT_SUCCESSFUL)
@@ -213,6 +215,9 @@ class HardwareSafetyTest(unittest.TestCase):
         self.assertNotIn(
             "StartServoEsJ", [call[0] for call in iface._cps.calls])
         push = [call for call in iface._cps.calls if call[0] == "PushServoJ"]
+        grid, period, holds = recorded_plans[0]
+        self.assertEqual([call[3] for call in push], grid+[grid[-1]]*holds)
+        self.assertEqual(period, .001)
         self.assertGreaterEqual(len(push), 2)
         self.assertEqual(push[0][3], [0.0] * 6)
         self.assertEqual(push[-1][3], [1.0, 0.0, 0.0, 0.0, 0.0, 0.0])

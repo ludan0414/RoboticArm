@@ -250,6 +250,9 @@ class RosPickSessionPorts:
 
     def log_event(self, record):
         record = {"time": time.time(), "monotonic_sec": time.monotonic(), **record}
+        recorder = getattr(self._driver, 'telemetry_recorder', None)
+        if recorder is not None:
+            recorder.write('pick_session', record)
         line = json.dumps(record, default=str)
         self._node.get_logger().info("pick_event: %s" % line)
         if self._trace_file is None:
@@ -335,7 +338,15 @@ class HardwarePickDriver(Node):
         if not client.wait_for_server(timeout_sec=5.0):
             return False, "%s server missing" % name, None
         event = threading.Event()
-        send = client.send_goal_async(goal)
+        # The planner enforces a trajectory-duration execution timeout. The
+        # outer client watches liveness, not the old 90s per-hop total budget.
+        deadline = None
+        if name.startswith('PlanMotion:'):
+            from luggage_planning.action_feedback_wait import FeedbackDeadline
+            deadline = FeedbackDeadline(timeout)
+            send = client.send_goal_async(goal, feedback_callback=deadline.feedback)
+        else:
+            send = client.send_goal_async(goal)
         send.add_done_callback(lambda _f: event.set())
         if not event.wait(10.0):
             return False, "%s goal send timeout" % name, None
@@ -345,9 +356,12 @@ class HardwarePickDriver(Node):
         event.clear()
         result_fut = handle.get_result_async()
         result_fut.add_done_callback(lambda _f: event.set())
-        if not event.wait(timeout):
+        if deadline is not None:
+            deadline.refresh()
+        if not (deadline.wait(event) if deadline is not None else event.wait(timeout)):
             handle.cancel_goal_async()
-            return False, "%s result timeout" % name, None
+            detail = 'feedback/result timeout' if deadline is not None else 'result timeout'
+            return False, "%s %s" % (name, detail), None
         wrapped = result_fut.result()
         result = wrapped.result
         status = wrapped.status
@@ -731,6 +745,7 @@ class HardwarePickDriver(Node):
                     ports, segments, use_scene=not self._args.no_scene,
                     low_hold_sec=self._args.release_low_hold_sec,
                     release_deadline_sec=self._args.release_deadline_sec)
+                self._last_place_reason = reason
                 self.get_logger().info("place session: exit=%d reason=%s" % (code, reason))
                 return code
             if result.completed and self._args.use_vacuum and self._args.release:
@@ -799,7 +814,8 @@ def build_argument_parser(runtime_config=None):
     parser.add_argument("--auth-max-attempts", type=int, default=5)
     parser.add_argument("--auth-max-elapsed-sec", type=float, default=5.0)
     parser.add_argument("--auth-wait-period-sec", type=float, default=0.5)
-    parser.add_argument("--plan-timeout", type=float, default=90.0)
+    parser.add_argument("--plan-timeout", type=float, default=90.0,
+                        help="PlanMotion feedback/result inactivity timeout; planner bounds execution duration")
     parser.add_argument("--ready-timeout", type=float, default=90.0)
     parser.add_argument("--max-candidates", type=int, default=3)
     parser.add_argument("--release-low-hold-sec", type=float, default=0.5)

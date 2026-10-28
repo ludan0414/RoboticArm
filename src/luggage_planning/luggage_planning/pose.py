@@ -35,7 +35,6 @@ class MotionSegment:
     keep_camera_down: bool = False
     lock_wrist: bool = False
     allow_ompl_fallback: bool = False
-    # Minimum Cartesian path fraction this segment requires before execution
-    # (0.0 = executor default). Suction approach/attach/retry_reverse carry
-    # 1.0 so a partial straight-line path is refused, not executed.
+    # Legacy Cartesian coverage hint (wire compatibility). Incomplete paths
+    # now trigger complete pose-goal replanning rather than partial execution.
     required_cartesian_fraction: float = 0.0
