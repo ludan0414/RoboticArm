@@ -47,7 +47,12 @@ def replay(folder, *, source_root=DEFAULT_SOURCE, headless=False, fps=30, device
     from online_packing_real import Hull
     hull = Hull.from_config(yaml.safe_load((folder / "scene_tf.yaml").read_text(encoding="utf-8")))
     palette = {"blue": [.12, .38, .90], "black": [.08, .08, .10],
-               "grey": [.55, .57, .60], "red": [.85, .10, .10]}
+               "grey": [.55, .57, .60], "red": [.85, .10, .10],
+               "silver": [.76, .78, .80], "pink": [.94, .54, .68],
+               "magenta": [.70, .10, .52], "blackwhite": [.34, .34, .35],
+               "blackbronze": [.33, .24, .17], "bronzewhite": [.70, .56, .38],
+               "bronze": [.59, .37, .20], "smallgrey": [.48, .51, .54],
+               "blackpink": [.48, .20, .33]}
     input_labels = inputs.get("box_labels", [""] * len(inputs["boxes"]))
     sample = dict(container=hull.as_dict(), steps=[dict(incoming=dict(id=f"B{i+1}", dims=dims,
                   color_rgb=palette.get(input_labels[i], [.83, .46, .20] if i % 2 == 0 else [.70, .52, .28])))

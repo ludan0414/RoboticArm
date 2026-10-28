@@ -8,14 +8,21 @@ from demo_feeder import FEEDER_CENTER_M, feeder_route
 
 
 def greedy_sequence(boxes, hull, domain, workspace, progress=print,
-                    feeder_center=FEEDER_CENTER_M):
+                    feeder_center=FEEDER_CENTER_M, allow_partial=False):
     remaining = list(range(len(boxes)))
     placed, sequence = [], []
     depth_frontier = float("inf")
     while remaining:
         candidates = []
+        # Boxes with identical dimensions have identical geometry and route
+        # feasibility; retain the first remaining input index for stable IDs.
+        seen_dimensions = set()
         for index in remaining:
             source = boxes[index]
+            signature = tuple(source)
+            if signature in seen_dimensions:
+                continue
+            seen_dimensions.add(signature)
             for certificate, point in enumerate(domain["poses"]):
                 yaw = point["box_yaw_rad"]
                 dims = tuple(source if abs(yaw) < 1e-6 else (source[1], source[0], source[2]))
@@ -41,8 +48,12 @@ def greedy_sequence(boxes, hull, domain, workspace, progress=print,
                 selected = box, point, certificate, route, index
                 break
         if selected is None:
+            if allow_partial and sequence:
+                progress(f"GREEDY_PARTIAL: {len(placed)}/{len(boxes)}; no further candidate on this grid")
+                break
             raise RuntimeError(f"GREEDY_BLOCKED: {len(placed)}/{len(boxes)} placed; domain candidates={len(candidates)}")
         box, point, certificate, route, index = selected
+        feeder_joint_q = np.asarray(workspace.q_last, dtype=float).tolist()
         source = boxes[index]
         depth_frontier = point["contact_local_m"][0]
         remaining.remove(index)
@@ -66,7 +77,7 @@ def greedy_sequence(boxes, hull, domain, workspace, progress=print,
                                  quaternion_xyzw=[0, 0, math.sin(yaw / 2), math.cos(yaw / 2)]),
                              position_world_m=world_center,
                              orientation_world_xyzw=(container_rot * Rotation.from_euler("z", yaw)).as_quat().tolist(),
-                             domain_certificate=certificate, route=route))
+                             domain_certificate=certificate, feeder_joint_q=feeder_joint_q, route=route))
         placed.append(box)
         progress(f"GREEDY_PLAN {len(sequence)}/{len(boxes)}: {box.id} -> {world_center}, yaw={math.degrees(yaw):.0f}")
     return sequence

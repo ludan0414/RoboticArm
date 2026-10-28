@@ -14,3 +14,5 @@
 **/last_state.npz
 **/status.json
 **/replay_result.json
+!/measured8_original_preview/
+!/measured8_spaced_preview/

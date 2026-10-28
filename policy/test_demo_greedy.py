@@ -85,6 +85,17 @@ class GreedyTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "GREEDY_BLOCKED"):
             greedy_sequence([[.5, .4, .3]], None, dict(poses=[]), Workspace(), progress=lambda _: None)
 
+    def test_partial_plan_requires_opt_in_and_keeps_selected_boxes(self):
+        hull = Hull(1.49, 1.97, 1.48, 1.535, .37, .057, 1.383, .067, 1.479, .53, -.745, -.985)
+        point = dict(contact_local_m=[.25, .5, .3], contact_world_m=[.25, .5, .3],
+                     box_yaw_rad=0, joint_q=[0] * 6)
+        boxes = [[.4, .3, .3]] * 2
+        with self.assertRaisesRegex(RuntimeError, "GREEDY_BLOCKED"):
+            greedy_sequence(boxes, hull, dict(poses=[point]), Workspace(), progress=lambda _: None)
+        rows = greedy_sequence(boxes, hull, dict(poses=[point]), Workspace(),
+                               progress=lambda _: None, allow_partial=True)
+        self.assertEqual([r['input_index'] for r in rows], [0])
+
 
 if __name__ == "__main__":
     unittest.main()

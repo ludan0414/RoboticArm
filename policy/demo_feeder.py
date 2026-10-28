@@ -7,7 +7,8 @@ from online_packing_real import path_clear, route_to
 FEEDER_CENTER_M = (-.3, .5, .55)
 
 
-def feeder_route(box, placed, hull, workspace, source_dims, feeder_center=FEEDER_CENTER_M):
+def feeder_route(box, placed, hull, workspace, source_dims, feeder_center=FEEDER_CENTER_M,
+                 *, check_return=True):
     dims = box.dims
     start = tuple(feeder_center[k] - dims[k] / 2 for k in range(3))
     if start[0] + dims[0] > -.05 + 1e-6:
@@ -36,6 +37,6 @@ def feeder_route(box, placed, hull, workspace, source_dims, feeder_center=FEEDER
         if not path_clear(dims, route, placed, hull):
             continue
         if (workspace.route_is_feasible(route, dims, yaw, hull)
-                and workspace.route_is_feasible(list(reversed(route)), dims, yaw, hull)):
+                and (not check_return or workspace.route_is_feasible(list(reversed(route)), dims, yaw, hull))):
             return route
     return None

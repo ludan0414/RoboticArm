@@ -195,9 +195,9 @@ class BridgeCompiler(MotionCompiler):
 
 
 def prepare_bridge(base_folder, output, feeder_xy, *, validate=True, observe_at_base=False,
-                   feeder_world_xy=None, observation_base_xy=None):
+                   feeder_world_xy=None, observation_base_xy=None, allow_partial=False):
     base_folder, output = Path(base_folder), Path(output)
-    source_plan = (check_bundle(base_folder) if validate else
+    source_plan = (check_bundle(base_folder, allow_partial=allow_partial) if validate else
                    json.loads((base_folder/"plan.json").read_text(encoding="utf-8")))
     output.mkdir(parents=True, exist_ok=False)
     for name in ("input.json", "domain.json", "scene_tf.yaml", "model_manifest.json"):

@@ -1,0 +1,9 @@
+{
+  "success": true,
+  "placed": 8,
+  "scope": "pick_carry_place_only",
+  "empty_return_checked": false,
+  "transitions_between_boxes": "teleport",
+  "physics_dynamics": "not_evaluated",
+  "payload_checked_frames": 1461
+}

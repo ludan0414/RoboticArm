@@ -69,7 +69,8 @@ class TracedIKWorkspace(NewtonIKWorkspace):
         self.trace.write(json.dumps(dict(boundary="ik", target_world=list(map(float, target_position)),
                                         yaw_rad=float(yaw), check_collision=check_collision,
                                         seed=seed.tolist(), ok=ok,
-                                        diagnostics=self.last_diagnostics)) + "\n")
+                                        diagnostics=self.last_diagnostics,
+                                        collision_pairs=getattr(self, "last_collision_pairs", []) if not ok else [])) + "\n")
         self.trace.flush()
         return ok, joints
 

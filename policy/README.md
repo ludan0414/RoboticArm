@@ -518,3 +518,106 @@ python export_hardware_loading_profile.py --bundle demo_data/new_four_ground --o
 平移 `[+0.8,0,-0.2]m`，再按工具到 D555 optical 的固定 TF 使相机朝底座 -X。
 该调整作用于真机初始化/复位/返回，不改写 Newton 原录制姿态；现场缺少 TF 或
 MoveIt 拒绝目标时不会执行。封吸实际 TF 和末端进场处理见部署侧 Pick 恢复说明。
+
+## Full-flat-floor candidate experiment
+
+`prepare_full_floor_demo.py` constructs 70 geometry candidates for 55×35×20 cm
+cases, with ten candidates per layer and seven layers up to 1.4 m. It excludes the sloped floor and checks
+full support. The target is 32 cases; this is a structured layout search, not
+an optimality proof. Each candidate must pass Newton IK/static collision,
+then the existing back-to-front greedy route search and the complete motion
+compiler before a replay bundle is written. A candidate or rejected IK result
+alone does not prove reachability or unreachability for all robot poses.
+
+On Windows use a short Warp cache path to avoid long kernel filenames:
+
+```powershell
+cd policy
+$env:WARP_CACHE_PATH='C:/warp_cache_roboticarm'
+python prepare_full_floor_demo.py --output demo_data/full_floor_32 --scene-config ../deployment_ws/config/scene_tf.loading_site.yaml
+python replay_prepared_demo.py --bundle demo_data/full_floor_32 --manual-pick
+```
+
+The preparation output directory must not already exist. Replay only after the
+preparation emits `READY_FOR_REPLAY`; `prepare_result.json` and the domain
+records retain the failure stage if it cannot place all 32 cases. This
+experimental script uses the existing doorway staging point, not the ground
+feeder bridge, and does not execute any real robot motion.
+
+To compile the checked subset when the target count is blocked, add
+`--allow-partial` during preparation and add `--allow-partial` to the replay
+command. The result reports both requested and planned counts; this is the
+subset found by this search, not a proof of the maximum possible number. The
+candidate route sampler follows the compiler's smooth Cartesian step sizes,
+but the completed trajectory still has to pass frame-level checks.
+
+Finished 32-box layout preview (static geometry, not a validated pick/place
+trajectory): `python show_full_floor_layout.py`. It opens with all cases
+already placed, checks full support and the flat floor, and requires no button.
+The arm pose and box arrangement are only a visualization; reachability and
+collision-free motion have not been demonstrated for this layout.
+
+## 13 measured suitcases: three-stack placement probe
+
+`demo_inputs/site_thirteen_measured.json` contains the original four cases and
+nine new physical cases. `blackwhite` and `blackbronze` are separate cases with
+identical 75×49×29 cm dimensions. `three_stack_layout.py` and
+`prepare_three_stacks.py` search a 3+2+3 layout with at most three layers and
+non-increasing container-local depth. The candidate solver checks full support,
+flat-floor bounds, doorway, robot IK and the loaded entry routes.
+
+The separate `probe_three_stack_placements.py` replays and checks each case's
+pick, carry and place against the scene and already placed cases. It teleports
+the empty robot between cases: empty return, continuous transitions, ground
+pickup, dynamic physics and real-hardware execution are **not** validated.
+The current eight-case output is a local evidence directory, not a hardware
+profile or a frozen end-to-end trajectory. Its third stack's floor box touches
+the boundary of the sloped region; zero boundary margin has been measured.
+
+With the result directory available, show the last checked pose without a
+Pick button:
+
+```powershell
+$env:WARP_CACHE_PATH='C:/warp_cache_roboticarm'
+python show_measured_final.py --bundle ../docs/status/evidence/2026-10-28-measured-cases/placement_probe01
+```
+
+The spaced-stack experiment stores its original local backup under
+`docs/status/evidence/2026-10-28-measured-cases/saved_v1/`. The newer placement
+search uses fixed local-y stack centers .35/.84/1.32 m and requires at least
+.05 m lateral clearance between the projected footprint of any two stacks.
+Its 3/2/3 arrangement has minimum gaps .10 and .06 m, respectively; the
+third stack still touches the flat-floor/slope boundary. Place-only results
+never certify empty return, ground pickup, dynamics or hardware deployment.
+After `spaced_probe01/result.json` reports success, automatically replay its
+recording without buttons (empty-arm transitions are teleports):
+
+```powershell
+cd policy
+$env:WARP_CACHE_PATH='C:/warp_cache_roboticarm'
+python replay_placement_probe.py --bundle ../docs/status/evidence/2026-10-28-measured-cases/spaced_probe01
+```
+
+### Saved eight-case previews
+
+`demo_data/measured8_original_preview/` preserves the original eight-case
+arrangement. `demo_data/measured8_spaced_preview/` contains the later 3/2/3
+arrangement with .10m and .06m gaps. Both are placement-only Newton recordings:
+the robot teleports empty between cases, the ground feeder and actual return
+are not validated, dynamics are not simulated, and neither has `READY.json`.
+They are deliberately not accepted by the hardware profile exporter. The
+active hardware profile remains the original four-case profile; downloading
+this branch does **not** configure hardware to place these eight cases.
+The third base is exactly at the flat/slope boundary, with no tolerance.
+
+Run from `policy/` to replay the placement-only simulation:
+
+```powershell
+$env:WARP_CACHE_PATH='C:/warp_cache_roboticarm'
+python replay_placement_probe.py --bundle demo_data/measured8_spaced_preview
+```
+
+A separate `compile_spaced_full.py` attempts all recorded placement paths plus
+empty return; it does not by itself generate or validate ground-feeder or real
+hardware motion. Only a successfully verified ground-feeder bundle can be
+passed to `export_hardware_loading_profile.py`.
