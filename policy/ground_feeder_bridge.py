@@ -310,19 +310,27 @@ def prepare_bridge(base_folder, output, feeder_xy, *, validate=True, observe_at_
                 high_dock = dock_tool[:3].copy()
                 high_dock[2] += max(0.0, run.high_carry_bottom_z + .005
                                    - box_bottom(dock_box, run.current_box_size))
-                high_dock_q = run.solve(high_dock, yaw)
                 run.high_carry = True
                 portal_alignment=None
                 if float(scene_config['container']['opening'].get('clearance_m',0))>0:
                     outside_dock=portal_staging_point(high_dock,run.container)
-                    outside_q=run.solve(outside_dock,yaw)
-                    connector=run.joint_path(run.q.copy(),outside_q,'CARRY')
+                    # A joint-space sweep can bow into the side frame even
+                    # when both endpoints clear it (measured B10 failure).
+                    # Hold box attitude/height on the outside Cartesian rail;
+                    # validate every sampled robot and payload frame as usual.
+                    run.enter('CARRY')
+                    run.ik.q_last=run.q.astype(np.float32)
+                    connector_start=len(run.history)
+                    run.move(outside_dock,yaw)
+                    connector=[frame[0].tolist() for frame in run.history[connector_start:]]
                     alignment_start=len(run.history)
                     run.move(high_dock,yaw)
                     portal_alignment=dict(outside_tool_world_m=outside_dock.tolist(),
                         dock_tool_world_m=high_dock.tolist(),
+                        connector_strategy='constant_attitude_cartesian_outside_rail',
                         recorded_joints=[frame[0].tolist() for frame in run.history[alignment_start:]])
                 else:
+                    high_dock_q = run.solve(high_dock, yaw)
                     connector = run.joint_path(run.q.copy(), high_dock_q, "CARRY")
                 run.high_carry = False
                 run.move(dock_tool[:3], yaw)
