@@ -19,6 +19,9 @@ CENTRE_OFFSETS_M = (0., .05, -.05, .10, -.10)
 HORIZONTAL_CARGO_CLEARANCE_M = .03
 P2_FORWARD_CENTRE_STEP_M = .01
 FIRST_BOX_INSIDE_DROP_M = .12
+THIRD_BOX_INSIDE_DROP_M = .08
+THIRD_BOX_PRE_PLACE_CLEARANCE_M = .075
+FOURTH_BOX_DOOR_LOWER_M = .09
 
 
 def xyz(pose):
@@ -54,7 +57,7 @@ def crosses_footprint(start, end, cargo, cargo_size, payload_extent, margin):
 
 
 class CenteredDoorwayEntry:
-    strategy = 'p2_centre_enter_then_lane_v4'
+    strategy = 'p2_centre_enter_then_lane_v5'
 
     def __init__(self, geometry, carry_config=None):
         self.geometry, self.carry_config = geometry, carry_config
@@ -62,6 +65,12 @@ class CenteredDoorwayEntry:
     def build(self, target, size, container_pose, prior_targets=(), start_box_pose=None):
         if len(size) != 3 or any(not math.isfinite(v) or v <= 0 for v in size):
             raise ValueError('DOORWAY_ENTRY: positive finite payload dimensions required')
+        # Third-box pre-place at 15 cm clearance was beyond the arm's reach
+        # with J3=-16°. The same site target is IK-feasible 8 cm lower; keep
+        # a 7.5 cm release approach above the configured support.
+        if len(prior_targets) == 2 and start_box_pose is not None:
+            target = replace(target, clearance_m=min(
+                target.clearance_m, THIRD_BOX_PRE_PLACE_CLEARANCE_M))
         origin = xyz(container_pose)
         rotation = rotation_matrix(tuple(getattr(container_pose.orientation, k)
                                          for k in ('x', 'y', 'z', 'w')))
@@ -125,6 +134,11 @@ class CenteredDoorwayEntry:
         tilt_slack = max(abs(rotation[0][2]), abs(rotation[1][2]))*MAX_TRANSIT_LOWERING_M/rotation[2][2]
         choices = []
         for offset in CENTRE_OFFSETS_M:
+            # Fourth box enters on the left/central side of the opening.
+            # The formerly selected +10 cm offset grazed link5 on the top
+            # guard while aiming toward the right-side stack.
+            if len(cargo) == 3 and start_box_pose is not None and offset != 0.:
+                continue
             y = nominal_y+offset
             if not y0+margin+local_extent[1] <= y <= y1-margin-local_extent[1]:
                 continue
@@ -148,22 +162,37 @@ class CenteredDoorwayEntry:
         if not choices:
             raise ValueError('DOORWAY_ENTRY: insufficient vertical doorway clearance')
         _, _, center_offset, local_z, bottom, relevant = min(choices)
+        # At the central/left entry, cargo overflight demands a higher route.
+        # Cross the doorway 9 cm below that overflight height; lift only once fully inside.
+        door_lower_m = FOURTH_BOX_DOOR_LOWER_M if len(cargo) == 3 and start_box_pose is not None else 0.
         y = nominal_y+center_offset
-        outside = Pose(Point(*world((outside_x,y,local_z))), lane.orientation)
-        inside = Pose(Point(*world((inside_x,y,local_z))), lane.orientation)
-        # The empty first slot needs no overflight of earlier cargo. Once the
-        # box is fully inside, descend before traversing to its far lane:
-        # staying at the doorway height drove J3 to -13° and the next IK
-        # target past the arm's reach in the first-box site trace.
-        early_drop = not cargo and start_box_pose is not None
-        transit_z = max(lane.position.z, inside.position.z-FIRST_BOX_INSIDE_DROP_M) if early_drop else inside.position.z
+        doorway_local_z = local_z-door_lower_m/rotation[2][2]
+        outside = Pose(Point(*world((outside_x,y,doorway_local_z))), lane.orientation)
+        inside = Pose(Point(*world((inside_x,y,doorway_local_z))), lane.orientation)
+        raised_inside = replace(inside, position=Point(
+            inside.position.x, inside.position.y,
+            inside.position.z+door_lower_m))
+        # Boxes one and three reached J3 near full extension at the high
+        # far-lane corner. Lower only after the entire payload clears the
+        # doorway, while retaining configured earlier-cargo clearance.
+        inside_drop_m = (
+            FIRST_BOX_INSIDE_DROP_M if not cargo else
+            THIRD_BOX_INSIDE_DROP_M if len(cargo) == 2 else 0.
+        ) if start_box_pose is not None else 0.
+        early_drop = inside_drop_m > 0.
+        cargo_floor = max((tops[index-1] for index in relevant), default=float('-inf'))
+        transit_z = (max(lane.position.z, inside.position.z-inside_drop_m,
+                         cargo_floor+CARGO_OVERFLIGHT_GAP_M+payload_extent[2]) if early_drop
+                     else raised_inside.position.z if door_lower_m else inside.position.z)
         lowered_inside = replace(inside, position=Point(
             inside.position.x, inside.position.y, transit_z))
         high_lane = replace(lane, position=Point(lane.position.x, lane.position.y,
                                                 max(lane.position.z, transit_z)))
         # Explicit dense waypoints preserve the reviewed corner at each phase.
         route = [start_box_pose, outside] if start_box_pose is not None else [outside]
-        goals = [inside, lowered_inside, high_lane, lane] if early_drop else [inside, high_lane, lane]
+        goals = ([inside, raised_inside, high_lane, lane] if door_lower_m else
+                 [inside, lowered_inside, high_lane, lane] if early_drop else
+                 [inside, high_lane, lane])
         for goal in goals:
             pieces = connect_place_from_pose(route[-1], [MotionSegment(
                 name='doorway_entry', type='cartesian', target_pose=goal)],
@@ -177,6 +206,7 @@ class CenteredDoorwayEntry:
             lowered_from_all_cargo_baseline_m=(baseline_z-local_z)*rotation[2][2],
             height_relevant_prior_boxes=relevant,
             outside_box_pose=asdict(outside), inside_box_pose=asdict(inside),
-            first_box_inside_drop_m=(inside.position.z-transit_z if early_drop else 0.),
+            inside_drop_m=(inside.position.z-transit_z if early_drop else 0.),
+            door_lower_m=door_lower_m,
             replaced_via_poses=len(target.via), via_count=len(route),
             minimum_transit_box_bottom_world_m=bottom)

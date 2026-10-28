@@ -128,12 +128,19 @@ class CenteredEntryTests(unittest.TestCase):
                 progress=[longitudinal(p) for p in route.via]
                 self.assertTrue(all(b >= a-1e-8 for a,b in zip(progress,progress[1:])),progress[:5])
                 if index == 0:
-                    self.assertAlmostEqual(report['first_box_inside_drop_m'], .12, places=3)
+                    self.assertAlmostEqual(report['inside_drop_m'], .12, places=3)
                     self.assertTrue(any(abs(p.position.x-route.via[-1].position.x)>.1
                                         and p.position.z < report['inside_box_pose']['position']['z']-.1
                                         for p in route.via))
+                elif index == 2:
+                    self.assertAlmostEqual(route.clearance_m, .075)
+                    self.assertLess(route.via[-1].position.z, 1.19)
+                elif index == 3:
+                    self.assertAlmostEqual(report['door_lower_m'], .09)
+                    self.assertEqual(report['centre_offset_m'], 0.)
+                    self.assertEqual(report['inside_drop_m'], 0.)
                 else:
-                    self.assertEqual(report['first_box_inside_drop_m'], 0.)
+                    self.assertEqual(report['inside_drop_m'], 0.)
 
     def test_impossible_width_or_no_inside_pose_fails_closed(self):
         target = self.cycles[5][0]
@@ -142,6 +149,28 @@ class CenteredEntryTests(unittest.TestCase):
         outside = replace(target,box_pose=Pose(Point(0,1,1)))
         with self.assertRaisesRegex(ValueError,'fully-inside'):
             self.entry.build(outside,target.reference_box_size_m,self.container)
+
+    def test_third_and_fourth_measured_entry_clear_configured_obstacles(self):
+        guards = [(Pose(Point(*g['xyz']),Quaternion(*g['quat'])),g['size'],g['id'])
+                  for g in self.guard.collision_boxes(self.container)]
+        pedestal = (self.config.pedestal,
+                    tuple(v+2*self.config.margin for v in self.config.size),'pedestal')
+        for index in (2,3):
+            with self.subTest(box=index+1):
+                original = self.cycles[index][0]
+                target = lower_final_approach(release_above_support(original))
+                target,_ = self.guard.align_target(target,original.reference_box_size_m,self.container)
+                start = Pose(Point(-.55,.15,1.1),target.box_pose.orientation)
+                route,_ = self.entry.build(target,original.reference_box_size_m,self.container,
+                    [t for t,_ in self.cycles[:index]],start_box_pose=start)
+                pre = replace(route.box_pose,position=Point(route.box_pose.position.x,
+                    route.box_pose.position.y,route.box_pose.position.z+route.clearance_m))
+                cargo = [(t.box_pose,t.reference_box_size_m,'previous_%d'%i)
+                         for i,(t,_) in enumerate(self.cycles[:index])]
+                for pose in samples([*route.via[1:],pre]):
+                    for obstacle,size,identity in [*guards,pedestal,*cargo]:
+                        self.assertFalse(overlaps(pose,route.reference_box_size_m,obstacle,size),
+                            'box %d at %s vs %s'%(index+1,xyz(pose),identity))
 
     def test_console_applies_entry_to_every_box_and_records_it_for_reverse_return(self):
         from test_hardware_loading_ports import load_console
