@@ -35,6 +35,13 @@ class IKSearchTests(unittest.TestCase):
         executor._avoid_collisions = True
         return executor,calls
 
+    def test_first_exact_solution_does_not_try_straight_seed(self):
+        executor,calls = self.executor([1])
+        current = [4.4,-1.2,-1.5,-1.7,1.55,1.4]
+        self.assertEqual(executor._ik_joints(NS(),current),[.1]*6)
+        self.assertEqual(len(calls),1)
+        self.assertEqual(calls[0].ik_request.robot_state.joint_state.position,current)
+
     def test_solver_exhaustion_retries_nearby_seeds_with_same_pose_and_collision_checks(self):
         executor,calls = self.executor([-31,-31,1])
         target = NS(marker='unchanged target')

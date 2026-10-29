@@ -461,7 +461,7 @@ def generate_launch_description():
                 executable="motion_planner_node.py",
                 name="motion_planner",
                 output="screen",
-                parameters=[{
+                parameters=[_robot_description(LaunchConfiguration("scene_tf_config")), {
                     "use_sim_time": False,
                     "robot_poses_config": LaunchConfiguration("robot_poses_config"),
                     "default_observe_pose": LaunchConfiguration("observe_pose_name"),
