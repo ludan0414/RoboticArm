@@ -136,8 +136,8 @@ class CenteredEntryTests(unittest.TestCase):
                     self.assertAlmostEqual(route.clearance_m, .075)
                     self.assertLess(route.via[-1].position.z, 1.19)
                 elif index == 3:
-                    self.assertAlmostEqual(report['door_lower_m'], .09)
-                    self.assertEqual(report['centre_offset_m'], 0.)
+                    self.assertEqual(report['door_lower_m'], 0.)
+                    self.assertEqual(report['entry_mode'],'target_aisle')
                     self.assertEqual(report['inside_drop_m'], 0.)
                 else:
                     self.assertEqual(report['inside_drop_m'], 0.)
@@ -150,12 +150,12 @@ class CenteredEntryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'fully-inside'):
             self.entry.build(outside,target.reference_box_size_m,self.container)
 
-    def test_third_and_fourth_measured_entry_clear_configured_obstacles(self):
+    def test_all_measured_entries_clear_configured_obstacles(self):
         guards = [(Pose(Point(*g['xyz']),Quaternion(*g['quat'])),g['size'],g['id'])
                   for g in self.guard.collision_boxes(self.container)]
         pedestal = (self.config.pedestal,
                     tuple(v+2*self.config.margin for v in self.config.size),'pedestal')
-        for index in (2,3):
+        for index in range(8):
             with self.subTest(box=index+1):
                 original = self.cycles[index][0]
                 target = lower_final_approach(release_above_support(original))
@@ -163,6 +163,11 @@ class CenteredEntryTests(unittest.TestCase):
                 start = Pose(Point(-.55,.15,1.1),target.box_pose.orientation)
                 route,_ = self.entry.build(target,original.reference_box_size_m,self.container,
                     [t for t,_ in self.cycles[:index]],start_box_pose=start)
+                if index==3:
+                    # Right-side box must not first align toward the already
+                    # loaded blue stack on the opposite side.
+                    self.assertLessEqual(route.via[1].position.y,start.position.y)
+                    self.assertEqual(route.box_pose,target.box_pose)
                 pre = replace(route.box_pose,position=Point(route.box_pose.position.x,
                     route.box_pose.position.y,route.box_pose.position.z+route.clearance_m))
                 cargo = [(t.box_pose,t.reference_box_size_m,'previous_%d'%i)
@@ -197,7 +202,10 @@ class CenteredEntryTests(unittest.TestCase):
                 self.assertGreater(len(pre.waypoints),30)
                 self.assertEqual(segments[-2].name,'place_descend')
                 self.assertEqual(segments[-1].name,'place_retreat')
-                self.assertLessEqual(abs(report['centre_local_y_m']+.265),.100000001)
+                if report['entry_mode']=='centre':
+                    self.assertLessEqual(abs(report['centre_local_y_m']+.265),.100000001)
+                else:
+                    self.assertGreater(report['centre_local_y_m'],-.265)
                 driver._pick_return_path = PickReturnPath()
                 driver._pick_return_path.poses = [actual]
                 driver.lookup_pose = lambda *args,**kw:pre.target_pose

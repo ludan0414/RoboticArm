@@ -45,13 +45,23 @@ class IKSearchTests(unittest.TestCase):
             self.assertEqual(request.ik_request.pose_stamped.pose.marker,target.marker)
             self.assertEqual(request.ik_request.timeout.sec,2)
         self.assertEqual([c.ik_request.robot_state.joint_state.position for c in calls],
-                         nearby_ik_seeds([0.]*6))
+                         nearby_ik_seeds([0.]*6)[:len(calls)])
         self.assertEqual([a['error_code'] for a in executor._last_ik_attempts],[-31,-31,1])
 
     def test_other_errors_and_cancel_never_retry(self):
         executor,calls = self.executor([-10])
         self.assertIsNone(executor._ik_joints(NS(),[0.]*6))
         self.assertEqual(len(calls),1)
+
+    def test_full_extension_seed_recovers_after_folded_seeds_fail(self):
+        executor,calls=self.executor([-31,-31,-31,1])
+        current=[4.4,-1.2,-1.5,-1.7,1.55,1.4]
+        self.assertIsNotNone(executor._ik_joints(NS(),current))
+        straight=calls[-1].ik_request.robot_state.joint_state.position
+        self.assertEqual(straight[2],0.)
+        self.assertAlmostEqual(sum(straight[1:4]),sum(current[1:4]))
+
+    def test_cancellation_stops_before_another_seed(self):
         executor,calls = self.executor([-31,1])
         checks = iter([False,True])
         executor._cancel_check = lambda:next(checks)

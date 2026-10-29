@@ -1,0 +1,42 @@
+{
+  "strategy": "p2_occupied_side_aware_entry_v6",
+  "entry_mode": "target_aisle",
+  "start_source": "measured_p2",
+  "centre_local_y_m": 0.032998999999999945,
+  "frame_clearance_m": 0.15000000000000002,
+  "nominal_centre_local_y_m": -0.265,
+  "centre_offset_m": 0.29799899999999996,
+  "lowered_from_all_cargo_baseline_m": 0.2516279358594208,
+  "height_relevant_prior_boxes": [],
+  "outside_box_pose": {
+    "position": {
+      "x": -0.5831295819096773,
+      "y": -0.07135538228551211,
+      "z": 1.1614129456259745
+    },
+    "orientation": {
+      "x": -0.015694878579016466,
+      "y": 0.002187064395914328,
+      "z": -0.9998620259126095,
+      "w": 0.004981633632680353
+    }
+  },
+  "inside_box_pose": {
+    "position": {
+      "x": -1.3611156176040715,
+      "y": -0.07916323959478438,
+      "z": 1.1858266557217023
+    },
+    "orientation": {
+      "x": -0.015694878579016466,
+      "y": 0.002187064395914328,
+      "z": -0.9998620259126095,
+      "w": 0.004981633632680353
+    }
+  },
+  "inside_drop_m": 0.0,
+  "door_lower_m": 0.0,
+  "replaced_via_poses": 34,
+  "via_count": 37,
+  "minimum_transit_box_bottom_world_m": 1.015
+}

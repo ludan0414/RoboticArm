@@ -1,0 +1,52 @@
+{
+  "scope": "synthetic measured-P2 fixture, not live telemetry",
+  "start_y": 0.15,
+  "first_alignment_y": 0.22621383009608242,
+  "target_y": -0.3800904589120145,
+  "blue_y": 0.5880598121876033,
+  "report": {
+    "strategy": "p2_centre_enter_then_lane_v5",
+    "start_source": "measured_p2",
+    "centre_local_y_m": -0.265,
+    "frame_clearance_m": 0.15000000000000002,
+    "nominal_centre_local_y_m": -0.265,
+    "centre_offset_m": 0.0,
+    "lowered_from_all_cargo_baseline_m": 0.0,
+    "height_relevant_prior_boxes": [
+      1,
+      2,
+      3
+    ],
+    "outside_box_pose": {
+      "position": {
+        "x": -0.5537287773427109,
+        "y": 0.22621383009608242,
+        "z": 1.3243907864240212
+      },
+      "orientation": {
+        "x": -0.015694878579016466,
+        "y": 0.002187064395914328,
+        "z": -0.9998620259126095,
+        "w": 0.004981633632680353
+      }
+    },
+    "inside_box_pose": {
+      "position": {
+        "x": -1.3589580953923377,
+        "y": 0.21813255957435318,
+        "z": 1.349659408519401
+      },
+      "orientation": {
+        "x": -0.015694878579016466,
+        "y": 0.002187064395914328,
+        "z": -0.9998620259126095,
+        "w": 0.004981633632680353
+      }
+    },
+    "inside_drop_m": 0.0,
+    "door_lower_m": 0.09,
+    "replaced_via_poses": 34,
+    "via_count": 51,
+    "minimum_transit_box_bottom_world_m": 1.2679778407980467
+  }
+}

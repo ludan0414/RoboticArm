@@ -16,4 +16,13 @@ def nearby_ik_seeds(current):
         candidate[2] -= sign*.12
         candidate[3] += sign*.06
         seeds.append(candidate)
+    # Near full extension, small perturbations can all remain on the folded
+    # numerical branch. Try a straight elbow as a solver start, sharing its
+    # pitch change between shoulder and wrist. Never command this seed.
+    if abs(current[2]) > 1e-6:
+        candidate = list(current)
+        candidate[1] += current[2]/2
+        candidate[2] = 0.
+        candidate[3] += current[2]/2
+        seeds.append(candidate)
     return seeds

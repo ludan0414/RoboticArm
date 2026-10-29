@@ -1,0 +1,29 @@
+{
+  "base_revision": "1b3cb18",
+  "changes": [
+    "target-side entry when opposite cargo is loaded",
+    "remove ordinal-fourth drop/raise in target-aisle mode",
+    "straight-elbow numerical IK seed plus seed-kind diagnostics"
+  ],
+  "tests": {
+    "passed": 62,
+    "total": 62
+  },
+  "newton": {
+    "success": true,
+    "frames": 460,
+    "scope": "fourth box, live entry builder, taught P2, nominal grasp",
+    "result": "newton02/probe_result.json"
+  },
+  "limitations": [
+    "actual sealed-grasp offset not supplied",
+    "not all eight live robot IK paths validated",
+    "exact field -31 waypoint not supplied"
+  ],
+  "pre_fix_fixture": "before.json",
+  "code_sha256": {
+    "src/luggage_planning/luggage_planning/doorway_entry.py": "321577b8ce0c78bd765d27bd2d0b8e114473a3fea7b8711b5a9d9f011d73de0a",
+    "src/luggage_planning/luggage_planning/ik_search.py": "076dfd0bd0333335defe0f2000f9627abd8cfd448aaef21fbbf46e9430765f71",
+    "src/luggage_planning/luggage_planning/motion_executor.py": "388e6ad34194dcdcc8e146fe192b9bd64b520d1bfdc21d09e5f0d86c7b3868b4"
+  }
+}

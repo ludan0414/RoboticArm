@@ -808,6 +808,7 @@ class MotionExecutor:
             response = self._wait_future(self._ik.call_async(request), IK_ATTEMPT_TIMEOUT_SEC+2.)
             self._last_ik_code = int(response.error_code.val) if response is not None else -1
             self._last_ik_attempts.append(dict(seed=seed, error_code=self._last_ik_code,
+                                              seed_kind='straight_elbow' if seed is not None and abs(seed[2])<1e-6 else 'current_or_nearby',
                                               timeout_sec=IK_ATTEMPT_TIMEOUT_SEC))
             if self._last_ik_code != -31:
                 break  # Retry solver exhaustion only, not transport/state errors.

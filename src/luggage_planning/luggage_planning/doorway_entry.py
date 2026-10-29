@@ -1,4 +1,4 @@
-"""Centre the entire payload before crossing the door, then select its aisle.
+"""Select an entry aisle using the target and already loaded cargo.
 
 This changes commissioning box waypoints, not joint commands or slot selection.
 All poses still require live attached-payload MoveIt planning. Configured earlier
@@ -57,7 +57,7 @@ def crosses_footprint(start, end, cargo, cargo_size, payload_extent, margin):
 
 
 class CenteredDoorwayEntry:
-    strategy = 'p2_centre_enter_then_lane_v5'
+    strategy = 'p2_occupied_side_aware_entry_v6'
 
     def __init__(self, geometry, carry_config=None):
         self.geometry, self.carry_config = geometry, carry_config
@@ -116,6 +116,15 @@ class CenteredDoorwayEntry:
             pedestal_bottom = (config.pedestal.position.z + extent(config.pedestal, config.size)[2]
                                + config.clearance + .005)
         cargo = [p for p in prior_targets if p is not None and p.reference_box_size_m]
+        # When loading the opposite stack, enter toward its own aisle rather
+        # than first drifting back toward the occupied stack. Door bounds
+        # still constrain the whole oriented payload, not just its centre.
+        target_y = local(lane)[1]
+        target_aisle = start_box_pose is not None and any(
+            (local(p.box_pose)[1]-nominal_y)*(target_y-nominal_y) < 0
+            for p in cargo)
+        entry_y = min(max(target_y,y0+margin+local_extent[1]+1e-6),
+                      y1-margin-local_extent[1]-1e-6)
         tops = [p.box_pose.position.z + extent(p.box_pose, p.reference_box_size_m)[2] for p in cargo]
         baseline_bottom = max([pedestal_bottom, *(top+CARGO_OVERFLIGHT_GAP_M for top in tops)])
         payload_extent = extent(lane, size)
@@ -128,16 +137,17 @@ class CenteredDoorwayEntry:
                 for x in (outside_x, inside_x)])
 
         baseline_z = local_height(baseline_bottom, nominal_y)
-        # Search only the middle 20cm of the aperture. Avoiding a tall adjacent
-        # stack by a few cm can lower the arm without flying over that stack.
-        # The existing all-cargo baseline limits this update to 8cm lowering.
+        # Keep the existing centre search for the original-side approach.
+        # An opposite-side aisle uses only cargo actually crossed by its path;
+        # an unrelated tall stack must not force a high, unreachable transit.
         tilt_slack = max(abs(rotation[0][2]), abs(rotation[1][2]))*MAX_TRANSIT_LOWERING_M/rotation[2][2]
         choices = []
-        for offset in CENTRE_OFFSETS_M:
+        offsets = (entry_y-nominal_y,) if target_aisle else CENTRE_OFFSETS_M
+        for offset in offsets:
             # Fourth box enters on the left/central side of the opening.
             # The formerly selected +10 cm offset grazed link5 on the top
             # guard while aiming toward the right-side stack.
-            if len(cargo) == 3 and start_box_pose is not None and offset != 0.:
+            if not target_aisle and len(cargo) == 3 and start_box_pose is not None and offset != 0.:
                 continue
             y = nominal_y+offset
             if not y0+margin+local_extent[1] <= y <= y1-margin-local_extent[1]:
@@ -152,7 +162,8 @@ class CenteredDoorwayEntry:
                        for a,b in zip(points,points[1:])):
                     bottom = max(bottom,top+CARGO_OVERFLIGHT_GAP_M)
                     relevant.append(prior_targets.index(previous)+1)
-            bottom = max(bottom,baseline_bottom-MAX_TRANSIT_LOWERING_M)
+            if not target_aisle:
+                bottom = max(bottom,baseline_bottom-MAX_TRANSIT_LOWERING_M)
             height = local_height(bottom,y)
             if z0+margin+local_extent[2] <= height <= z1-margin-local_extent[2]:
                 # Compare required world height, not sub-mm changes caused by
@@ -164,7 +175,7 @@ class CenteredDoorwayEntry:
         _, _, center_offset, local_z, bottom, relevant = min(choices)
         # At the central/left entry, cargo overflight demands a higher route.
         # Cross the doorway 9 cm below that overflight height; lift only once fully inside.
-        door_lower_m = FOURTH_BOX_DOOR_LOWER_M if len(cargo) == 3 and start_box_pose is not None else 0.
+        door_lower_m = FOURTH_BOX_DOOR_LOWER_M if not target_aisle and len(cargo) == 3 and start_box_pose is not None else 0.
         y = nominal_y+center_offset
         doorway_local_z = local_z-door_lower_m/rotation[2][2]
         outside = Pose(Point(*world((outside_x,y,doorway_local_z))), lane.orientation)
@@ -200,6 +211,7 @@ class CenteredDoorwayEntry:
             route.extend(piece.target_pose for piece in pieces)
         return replace(target, via=tuple(route)), dict(
             strategy=self.strategy,
+            entry_mode='target_aisle' if target_aisle else 'centre',
             start_source='measured_p2' if start_box_pose is not None else 'nominal_outside',
             centre_local_y_m=y, frame_clearance_m=margin,
             nominal_centre_local_y_m=nominal_y, centre_offset_m=center_offset,
