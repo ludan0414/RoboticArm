@@ -2,6 +2,10 @@
 
 # 实机代码 — Real-robot runtime (`deployment_ws`)
 
+新增按箱子清单生成的离线冻结路线入口，见
+[离线规划与部署](../policy/docs/offline_planner.md)。该入口输出独立的
+`site_offline_frozen_v1` profile；需同时更新规划端和操作台，原默认现场配置不变。
+
 当前 Orin（Humble 感知）＋笔记本（Jazzy 规划/执行）的逐窗口启动、人工上箱确认、
 单箱 pick/place 和返回等待位的流程，见专门的
 **[真机操作文档](docs/real_robot_runbook.md)**。

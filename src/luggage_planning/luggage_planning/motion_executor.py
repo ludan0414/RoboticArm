@@ -147,22 +147,9 @@ def wrist_singularity(points, margin_rad=_WRIST_SINGULARITY_MARGIN_RAD,
     a dict with the closest approach to k*pi, whether the track crosses a
     branch boundary, and ``ok``.
     """
-    rows = [list(getattr(p, "positions", p)) for p in (points or [])]
-    track = [float(r[joint_index]) for r in rows if len(r) > joint_index]
-    if len(track) < 2:
-        return None
-    margin = min(abs(v - round(v / math.pi) * math.pi) for v in track)
-    crosses = any(
-        _wrist_cell(a) != _wrist_cell(b) for a, b in zip(track, track[1:]))
-    return {
-        "joint": (JOINTS[joint_index] if joint_index < len(JOINTS)
-                  else "joint%d" % joint_index),
-        "margin_rad": round(margin, 4),
-        "margin_limit_rad": float(margin_rad),
-        "delta_rad": round(abs(track[-1] - track[0]), 4),
-        "crosses_branch": bool(crosses),
-        "ok": (not crosses) and margin >= float(margin_rad),
-    }
+    from luggage_planning.wrist_check import measure_wrist
+    return measure_wrist(points, margin_rad, joint_index, JOINTS)
+
 
 
 def wrist_singularity_reason(measurement):
@@ -447,7 +434,8 @@ class MotionExecutor:
         if seg_type == "pose_target":
             return self._run_pose_target(segment_msg, feedback_cb,
                                          execute_timeout, current_joints)
-        if seg_type == "cartesian":
+        from luggage_planning.offline_route_contract import FROZEN_CARTESIAN
+        if seg_type in ("cartesian",FROZEN_CARTESIAN):
             fraction, plan = self._plan_cartesian(segment_msg, feedback_cb)
             if plan is None:
                 return self._result(False, "compute_cartesian_path timeout", 0.0)
@@ -455,6 +443,12 @@ class MotionExecutor:
             wrist_singular = bool(getattr(plan, "wrist_singular", False))
             if not math.isfinite(fraction) or not 0. <= fraction <= 1.:
                 return self._result(False, 'invalid Cartesian planner fraction', 0.)
+            if seg_type==FROZEN_CARTESIAN and (fraction<1. or occupancy_blocked or wrist_singular):
+                from luggage_planning.motion_boundary import robot_traj_to_dict
+                self._cartesian_partial=robot_traj_to_dict(getattr(plan,'solution',None))
+                return self._result(False,
+                    'OFFLINE_ROUTE_RECHECK_REQUIRED: fraction=%.4f occupancy_blocked=%s wrist_singular=%s; no projection, partial prefix or alternate route executed' %
+                    (fraction,occupancy_blocked,wrist_singular),fraction)
             if not occupancy_blocked and not wrist_singular and fraction < 1.:
                 if str(segment_msg.name).startswith('return_pick_stop_'):
                     return self._result(False,
@@ -522,13 +516,14 @@ class MotionExecutor:
             "fraction": None,
             "cartesian_ok": None,
         }
-        if str(segment_msg.type) == "cartesian":
+        from luggage_planning.offline_route_contract import FROZEN_CARTESIAN
+        if str(segment_msg.type) in ("cartesian",FROZEN_CARTESIAN):
             fraction, plan = self._plan_cartesian(
                 segment_msg, None, start_joints=start_joints)
             record["fraction"] = fraction if plan is not None else 0.0
             record["cartesian_ok"] = (
                 plan is not None
-                and fraction >= self._min_fraction)
+                and fraction >= (1. if str(segment_msg.type)==FROZEN_CARTESIAN else self._min_fraction))
             if self._cartesian_excursion is not None:
                 record["cartesian_excursion"] = dict(self._cartesian_excursion)
         return record

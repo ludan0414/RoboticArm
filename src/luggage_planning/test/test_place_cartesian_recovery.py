@@ -20,6 +20,29 @@ def executor_type():
 
 
 class PlaceRecoveryTests(unittest.TestCase):
+    def test_frozen_paths_never_project_replan_or_execute_partial_prefix(self):
+        for name in ('pre_place','place_descend','place_retreat'):
+            for fraction,plan in ((.98,NS()),(1.,NS(occupancy_blocked=True)),
+                                  (1.,NS(wrist_singular=True))):
+                executor=self.setup_executor()
+                executor._plan_cartesian=lambda *a,f=fraction,p=plan:(f,p)
+                executor._run_pose_target=lambda *a:self.fail('frozen route was replanned')
+                executor._execute_trajectory=lambda *a:self.fail('rejected frozen route moved')
+                segment=NS(name=name,type='offline_frozen_cartesian',target_pose=NS(),
+                           waypoints=[NS()],allow_ompl_fallback=True)
+                result=executor._execute_segment_inner(segment,None,45,[0.]*6)
+                self.assertFalse(result.success)
+                self.assertIn('OFFLINE_ROUTE_RECHECK_REQUIRED',result.message)
+
+    def test_complete_frozen_path_executes_the_original_request(self):
+        executor=self.setup_executor();plan=NS();seen=[]
+        executor._plan_cartesian=lambda *a:(1.,plan)
+        executor._execute_trajectory=lambda *a:(seen.append(a) or NS(success=True))
+        segment=NS(name='pre_place',type='offline_frozen_cartesian',target_pose=NS(),waypoints=[NS()])
+        self.assertTrue(executor._execute_segment_inner(segment,None,45,[0.]*6).success)
+        self.assertIs(seen[0][0],plan)
+        self.assertIs(seen[0][1],segment)
+
     def setup_executor(self):
         executor = executor_type()()
         executor._min_fraction = .95

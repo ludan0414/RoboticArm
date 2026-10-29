@@ -43,6 +43,7 @@ class PlaceTarget:
     via: tuple = ()
     # Frozen policy input dimensions; never a replacement for measured geometry.
     reference_box_size_m: tuple = ()
+    route_source: str = 'runtime'
 
 
 def parse_place_target(data):
@@ -54,7 +55,12 @@ def parse_place_target(data):
     if not math.isfinite(clearance) or clearance < 0.05:
         raise ValueError("clearance_m must be finite and >= 0.05")
     via = tuple(_pose(p) for p in data.get("via_box_poses", []))
-    return PlaceTarget(_pose(data), clearance, via)
+    source = data.get('route_source', 'runtime')
+    if source not in ('runtime', 'offline_frozen_v1'):
+        raise ValueError('unknown placement route source')
+    if source == 'offline_frozen_v1' and not via:
+        raise ValueError('frozen placement requires explicit box waypoints')
+    return PlaceTarget(_pose(data), clearance, via, route_source=source)
 
 
 def measured_grasp_transform(box_pose, tool_pose):

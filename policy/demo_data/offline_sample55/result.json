@@ -1,0 +1,29 @@
+{
+  "success": true,
+  "boxes": 1,
+  "frames": 253,
+  "scene_recording": {
+    "success": true,
+    "boxes": 1,
+    "frames": 253,
+    "spawn_order": [
+      "B1"
+    ],
+    "final_poses": [
+      {
+        "id": "B1",
+        "position_error_m": 3.593061707485486e-08,
+        "orientation_error_rad": 0.0,
+        "spawn_position_world_m": [
+          -0.43614885210990906,
+          0.9999639987945557,
+          1.1766912937164307
+        ],
+        "spawn_frame": 1,
+        "release_frame": 127
+      }
+    ]
+  },
+  "scope": "nominal P1-P2/place/reverse; vision pick not simulated",
+  "hardware_motion_validated": false
+}

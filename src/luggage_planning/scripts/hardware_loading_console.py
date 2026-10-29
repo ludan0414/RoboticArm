@@ -366,8 +366,15 @@ class CommissioningDriver(HardwarePickDriver):
             if grasp is None:
                 raise RuntimeError("actual sealed-contact TF missing; refusing nominal grasp placement")
             target = self._args.place_target_data
-            target,self._cuboid_heading_report=nearest_cuboid_heading(
-                target,box_pose_from_grasp(actual,grasp))
+            frozen = target.route_source == 'offline_frozen_v1'
+            if frozen:
+                self._cuboid_heading_report = dict(source='offline_frozen_v1')
+                self._doorway_entry_strategy = 'offline_frozen_v1'
+                self.get_logger().info('offline frozen route: '+json.dumps(dict(
+                    box_waypoints=len(target.via),regenerated=False,grasp_offset_m=list(grasp[0]))))
+            else:
+                target,self._cuboid_heading_report=nearest_cuboid_heading(
+                    target,box_pose_from_grasp(actual,grasp))
             # Expected cargo settles onto its configured support after suction
             # opens. Never leave its obstacle at the elevated release pose.
             self._settled_box_pose = target.box_pose
@@ -376,12 +383,15 @@ class CommissioningDriver(HardwarePickDriver):
             self.get_logger().info('cuboid heading: '+json.dumps(self._cuboid_heading_report))
             self.get_logger().info('placement payload height: configured=%s reference=%s target=%s' % (
                 detection.box_size, target.reference_box_size_m, vars(target.box_pose.position)))
-            target = lower_final_approach(target)
-            target,doorway_report=self.doorway_guard.align_target(target,detection.box_size,
-                self.lookup_pose('world','container_link'))
+            if not frozen:
+                target = lower_final_approach(target)
+                target,doorway_report=self.doorway_guard.align_target(target,detection.box_size,
+                    self.lookup_pose('world','container_link'))
+            else:
+                doorway_report = dict(source='offline_frozen_v1', regenerated=False)
             self.get_logger().info('doorway clearance: '+json.dumps(doorway_report))
             doorway_entry = getattr(self, 'doorway_entry', None)
-            if doorway_entry is not None:
+            if doorway_entry is not None and not frozen:
                 target, entry_report = doorway_entry.build(target, detection.box_size,
                     self.lookup_pose('world','container_link'),
                     getattr(self, '_prior_place_targets', ()),
@@ -403,6 +413,10 @@ class CommissioningDriver(HardwarePickDriver):
         else:
             segments = connect_place_from_pose(actual, segments)
         segments = continuous_carry(segments)
+        if detection is not None and candidate is not None and frozen:
+            from luggage_planning.offline_route_contract import FROZEN_CARTESIAN
+            for segment in segments:
+                if segment.type=='cartesian':segment.type=FROZEN_CARTESIAN
         recovery = getattr(self, 'recovery', None)
         if recovery is not None:
             recovery.begin_place(segments)

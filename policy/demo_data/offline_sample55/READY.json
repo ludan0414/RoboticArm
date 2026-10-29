@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "ready": true,
+  "files": {
+    "input.json": "01cfbc2289a2d65f7cf0038bd401a10797fe0ec9fcbfac346f153912125cc744",
+    "domain.json": "bb7d4909557911f61239cfe6a67633114b0f8a60a79e5e3ec7e4c563880edfb7",
+    "plan.json": "b34e220e19abfe519580f0d008d385c7684ee63dd88aacae90fc4c2bf4a18596",
+    "trajectory.npz": "c1e9c74500b53659a3d03fb7a65656ae113d5ee2ed5a9e86fbaa56604f6ce3b2",
+    "scene_tf.yaml": "dd0ca484c767734411a9abd6dc19c7900607c9cf04689b1c3d9292c5ec551f25",
+    "validation.json": "5039d6929b1aecd6cc0d3844e2913440f23af73d25b21e0670d5c0638c222def",
+    "model_manifest.json": "3811ae500dac06bcd2e147cdf0e381688b925ee27cc141f950feddc91e0f5a00",
+    "hardware.json": "58df9adc219e8c4a9d096b997d343ef385469db015ecb05d512faf3c6fcf5e99",
+    "waypoints.json": "e345b121d74fd9042ddebfed2202327a51bcab9960bf97e18f69e38d088be52a",
+    "result.json": "5039d6929b1aecd6cc0d3844e2913440f23af73d25b21e0670d5c0638c222def",
+    "manifest.json": "ce287d3f530f1bb9383d68265347c44ac98fc5e300fbcc63f003028588410505"
+  }
+}

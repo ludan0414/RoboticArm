@@ -42,7 +42,8 @@ def candidate_slots(source, placed, levels, hull, frontier, extra_ys=()):
                         yield box, x, y, yaw, level
 
 
-def plan_measured(inputs, hull, workspace, output, write_json, target=12, prior_witnesses=()):
+def plan_measured(inputs, hull, workspace, output, write_json, target=12, prior_witnesses=(),
+                  max_layers=4, side_first=False, route_check=None):
     boxes=inputs['boxes']; labels=inputs['box_labels']
     remaining=list(range(len(boxes))); placed=[]; levels=[]; rows=[]; poses=[]
     rejected=[]; frontier=float('inf'); feeder=(-.43,.5,.55)
@@ -53,10 +54,12 @@ def plan_measured(inputs, hull, workspace, output, write_json, target=12, prior_
         candidates=[]
         for i in remaining:
             for box,x,y,yaw,level in candidate_slots(boxes[i],placed,levels,hull,frontier):
+                if level > max_layers:
+                    continue
                 candidates.append((box,x,y,yaw,level,i))
         # Prefer a supported higher layer, while preserving the monotonic
         # back-to-front frontier and using large floor boxes as supports.
-        candidates.sort(key=lambda v:(-v[4], abs(v[1]-.60),
+        candidates.sort(key=lambda v:((int(hull.flat_y/3 < v[2] < 2*hull.flat_y/3) if side_first else 0),-v[4], abs(v[1]-.60),
             min(abs(v[2]-.53),abs(v[2]-1.28)),
             -v[0].dims[0]*v[0].dims[1],v[5],v[2]))
         selected=None
@@ -102,7 +105,9 @@ def plan_measured(inputs, hull, workspace, output, write_json, target=12, prior_
                 with (output/'candidate_boundary.jsonl').open('a', encoding='utf-8') as log:
                     log.write(json.dumps(dict(boundary, event='endpoint_rejected', diagnostics=workspace.last_diagnostics))+'\n')
                 continue
-            route=feeder_route(box,placed,hull,workspace,boxes[i],feeder)
+            route=(feeder_route(box,placed,hull,workspace,boxes[i],feeder)
+                   if route_check is None else
+                   ([] if route_check(i,box,x,y,yaw,placed,q) else None))
             if route is None:
                 rejected.append(dict(input_index=i,label=labels[i],contact_local_m=local,yaw_rad=yaw,phase='route'))
                 with (output/'candidate_boundary.jsonl').open('a', encoding='utf-8') as log:

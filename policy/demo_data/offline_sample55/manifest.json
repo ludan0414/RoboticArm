@@ -1,0 +1,45 @@
+{
+  "command": [
+    "policy/plan_boxes.py",
+    "--input",
+    "policy/demo_inputs/offline_one_box.json",
+    "--output",
+    "docs/status/evidence/2026-10-29-offline-entry/run10"
+  ],
+  "python": "C:\\Users\\luan1\\.conda\\envs\\newton-rope\\python.exe",
+  "platform": "Windows-10-10.0.26200-SP0",
+  "device": "cuda:0",
+  "source_sha256": {
+    "policy/plan_boxes.py": "97957c52faee98793b2d9fe55682294bf6cbfa501b0f9382cf46e555b1e6ca56",
+    "policy/offline_frozen_planner.py": "0e3b9e5e87515b4a2e42d67600d0523a65d3ba4c05f34be2f123a5f5b7467e37",
+    "policy/measured_luggage_policy.py": "7e78ed2dd4d840129d4d2f24eb8cff3fedebda46ed52c9e36c449967cc8554d4",
+    "src/luggage_planning/luggage_planning/offline_route_contract.py": "389967fe79b370ec623500af184998d55338b493e392f804e83de527a76c3444",
+    "src/luggage_planning/luggage_planning/wrist_check.py": "3abcc8f53d135f05a07fcbcde805cabc5337137cdbd9fab6c0bcbaa05f6d3404"
+  },
+  "input_sha256": "83d0eb64a497624448c6d73e1d1aed17d3ad938e984aced54bd5342d38ab57cf",
+  "status": "passed",
+  "revision": "c7af59d8d495127f32a1b8d7578798405d6b7b29",
+  "dirty_paths": [
+    " M policy/measured_luggage_policy.py",
+    " M policy/online_packing_real.py",
+    " M policy/packing_policy.py",
+    " M policy/run_pick_place_pipeline.py",
+    " M src/luggage_planning/luggage_planning/hardware_loading_cycle.py",
+    " M src/luggage_planning/luggage_planning/motion_executor.py",
+    " M src/luggage_planning/luggage_planning/policy_place.py",
+    " M src/luggage_planning/scripts/hardware_loading_console.py",
+    " M src/luggage_planning/test/test_place_cartesian_recovery.py",
+    "?? policy/demo_inputs/offline_one_box.json",
+    "?? policy/imgui.ini",
+    "?? policy/offline_frozen_planner.py",
+    "?? policy/plan_boxes.py",
+    "?? policy/probe_reach.py",
+    "?? policy/test_offline_entry.py",
+    "?? policy/test_offline_parity.py",
+    "?? src/luggage_planning/luggage_planning/offline_route_contract.py",
+    "?? src/luggage_planning/luggage_planning/wrist_check.py",
+    "?? src/luggage_planning/test/test_frozen_route.py"
+  ],
+  "success": true,
+  "elapsed_sec": 127.64099999999962
+}

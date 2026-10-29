@@ -24,10 +24,12 @@ def loading_box_prompt(profile, snapshot):
 
 
 def parse_profile(data):
-    if (data.get("profile") != "site_commissioning_v1"
+    from .offline_route_contract import require_validation,PROFILE_TYPE
+    require_validation(data)
+    if (data.get("profile") not in ("site_commissioning_v1",PROFILE_TYPE)
             or data.get("frame_id") != "world"
             or data.get("tool_frame") != "suction_contact_frame"):
-        raise ValueError("requires site_commissioning_v1, world, suction_contact_frame")
+        raise ValueError("requires site_commissioning_v1 or site_offline_frozen_v1, world, suction_contact_frame")
     observe = _pose(data["observe_tool_pose"])
     entries = data["cycles"]
     if not isinstance(entries, list) or not entries:
@@ -35,6 +37,8 @@ def parse_profile(data):
     cycles = []
     for entry in entries:
         target = parse_place_target(entry["place_target"])
+        if data['profile']==PROFILE_TYPE and target.route_source!='offline_frozen_v1':
+            raise ValueError('offline profiles require frozen routes for every box')
         if "expected_demo_input_dims_m" in entry:
             size = _vector(entry["expected_demo_input_dims_m"], 3, "policy reference dimensions")
             if min(size) <= 0:

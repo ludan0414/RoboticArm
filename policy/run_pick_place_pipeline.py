@@ -25,8 +25,6 @@ import warp as wp
 from newton_ik_planner import NewtonIKWorkspace, tool_down_quaternion
 from online_packing_newton import HIDDEN, Pose, make_model, world_pose
 from online_packing_real import Hull
-from packing_policy import _load_manifest, _make_policy, plan
-from run_packing_visual import make_sample, parse_inline
 from joint_approach_path import nearest_revolute_solution, plan_joint_approach
 from scene_frames import container_pose, rotation
 
@@ -331,6 +329,10 @@ class Pipeline:
 
 
 def main():
+    # Learned-policy dependencies belong only to this historical CLI, not to
+    # the reusable Newton motion/checking classes used by offline planning.
+    from packing_policy import _load_manifest, _make_policy, plan
+    from run_packing_visual import make_sample, parse_inline
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--boxes", default=None, help="L,W,H;L,W,H in metres")
     parser.add_argument("--input", type=Path)

@@ -1,5 +1,9 @@
 # Newton 集装箱粗仿真
 
+离线输入箱子名字和尺寸、自动规划并输出真机/仿真共用路径：
+见 [离线入口文档](docs/offline_planner.md)，入口 `plan_boxes.py`。
+已附一箱通过样例 `demo_data/offline_sample55`；原有默认现场配置保持不变。
+
 ## 当前八箱：两侧先放，中间最后放（2026-10-29）
 
 完整地面回放包 `demo_data/measured8_sides_first_ground`，八箱共5811帧：
