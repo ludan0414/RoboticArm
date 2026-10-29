@@ -31,6 +31,16 @@ python policy/plan_boxes.py --input policy/demo_inputs/offline_one_box.json --ou
 逐项检查机械臂、载荷、已放箱子和舱体的碰撞以及关节分支，再搜索路线。
 这是有预算的启发式搜索，不保证最优装箱，也不能把搜索失败解释为数学上的不可达证明。
 
+也兼容仓库现有 `site_thirteen_measured.json` 的格式：`boxes` 为尺寸数组，
+`box_labels` 为一一对应的名字数组，顶层 `units` 为 `m` 或 `cm`。
+从 `policy/` 目录运行时使用：
+
+```powershell
+python plan_boxes.py --input demo_inputs/site_thirteen_measured.json --output demo_data/my_run
+```
+
+所有相对路径均相对当前终端目录，因此这里的输出路径不再加 `policy/`。
+
 只有所有输入箱子都规划、逐帧检查成功，才会生成 `hardware.json` 和 `READY.json`。
 失败保留 `failure.json`、`manifest.json` 和候选路线的诊断文件，供离线排查。
 

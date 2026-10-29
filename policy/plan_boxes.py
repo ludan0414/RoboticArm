@@ -16,8 +16,22 @@ def load_inventory(path):
     data=json.loads(Path(path).read_text(encoding='utf-8'))
     entries=data['boxes'] if isinstance(data,dict) else data
     if not isinstance(entries,list) or not entries:raise ValueError('boxes must be a nonempty list')
+    # Existing measured inventories store dimensions and names in parallel.
+    # Normalize that public format before the common named-row validation.
+    if isinstance(entries[0],list):
+        if not isinstance(data,dict):
+            raise ValueError('dimension arrays require boxes, box_labels and units')
+        labels=data.get('box_labels')
+        if not isinstance(labels,list) or len(labels)!=len(entries):
+            raise ValueError('box_labels must contain one name per box')
+        unit=data.get('units')
+        if unit not in ('m','cm'):
+            raise ValueError('dimension arrays require units m or cm')
+        entries=[dict(name=name,**{'size_'+unit:values})
+                 for name,values in zip(labels,entries)]
     names=[];boxes=[]
     for row in entries:
+        if not isinstance(row,dict):raise ValueError('each box must be a named object or dimension array')
         name=row['name']
         if not isinstance(name,str) or not name.strip() or name in names:
             raise ValueError('box names must be nonempty and unique')
