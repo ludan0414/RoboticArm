@@ -71,6 +71,7 @@ from luggage_planning.current_box_payload import (
 )
 from luggage_planning.planning_scene_client import (
     PlanningSceneClient,
+    robot_link_names,
     summarize_planning_scene,
 )
 from luggage_planning.ros_clock_wait import ClockTimeout, wait_event
@@ -105,6 +106,7 @@ class MotionPlannerNode(Node):
         self.declare_parameter("cartesian_max_step", 0.01)
         self.declare_parameter("cartesian_min_fraction", 0.95)
         self.declare_parameter("software_collision_checks", True)
+        self.declare_parameter("robot_description", "")
         # Legacy parameter: diagnostic reference only. It cannot re-enable
         # rad/m rejection; collisions, wrist checks and limits are independent.
         self.declare_parameter("cartesian_excursion_rad_per_m", 3.0)
@@ -187,6 +189,9 @@ class MotionPlannerNode(Node):
                 self._on_cap_depth, 1, callback_group=self._group)
         self._scene_client = PlanningSceneClient(
             self, callback_group=self._group)
+        if not bool(self.get_parameter('software_collision_checks').value):
+            self._scene_client._override_robot_links = robot_link_names(
+                str(self.get_parameter('robot_description').value))
 
         self._joint_state = None
         self._joint_lock = threading.Lock()

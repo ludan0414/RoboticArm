@@ -139,6 +139,10 @@ class CenteredEntryTests(unittest.TestCase):
                     self.assertEqual(report['door_lower_m'], 0.)
                     self.assertEqual(report['entry_mode'],'target_aisle')
                     self.assertEqual(report['inside_drop_m'], 0.)
+                elif index == 5:
+                    self.assertAlmostEqual(route.clearance_m, .075)
+                    self.assertEqual(route.box_pose, target.box_pose)
+                    self.assertEqual(report['inside_drop_m'], 0.)
                 else:
                     self.assertEqual(report['inside_drop_m'], 0.)
 

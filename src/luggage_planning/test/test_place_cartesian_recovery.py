@@ -55,7 +55,7 @@ class PlaceRecoveryTests(unittest.TestCase):
         executor = self.setup_executor()
         executor._plan_cartesian = lambda *a: (.867, NS())
         calls = []
-        executor._run_pose_target = lambda *a: (calls.append(a[0].name) or executor._result(True, "full goal reached", 1))
+        executor._run_pose_target = lambda *a, **kw: (calls.append(a[0].name) or executor._result(True, "full goal reached", 1))
         segment = NS(name="pre_place", type="cartesian", target_pose=NS(), allow_ompl_fallback=True, required_cartesian_fraction=1.)
         result = executor._execute_segment_inner(segment, None, 45, [0]*6)
         self.assertTrue(result.success)
@@ -65,7 +65,7 @@ class PlaceRecoveryTests(unittest.TestCase):
     def test_incomplete_descent_cannot_execute_or_release(self):
         executor = self.setup_executor()
         executor._plan_cartesian = lambda *a: (.867, NS())
-        executor._run_pose_target = lambda *a: executor._result(False, 'full target IK failed', 0.)
+        executor._run_pose_target = lambda *a, **kw: executor._result(False, 'full target IK failed', 0.)
         segment = NS(name="place_descend", type="cartesian", target_pose=NS(), allow_ompl_fallback=False, required_cartesian_fraction=1.)
         result = executor._execute_segment_inner(segment, None, 45, [0]*6)
         self.assertFalse(result.success)
@@ -75,7 +75,7 @@ class PlaceRecoveryTests(unittest.TestCase):
         executor = self.setup_executor()
         executor._plan_cartesian = lambda *a: (.792, NS())
         calls = []
-        def move(segment, feedback, timeout, seed):
+        def move(segment, feedback, timeout, seed, **kwargs):
             calls.append((segment.target_pose, list(seed), segment.name))
             self.assertEqual(segment.waypoints, [])
             self.assertEqual(segment.type, 'pose_target')
@@ -100,7 +100,7 @@ class PlaceRecoveryTests(unittest.TestCase):
         executor = self.setup_executor()
         executor._plan_cartesian = lambda *a: (.792, NS())
         calls = []
-        executor._run_pose_target = lambda segment, *args: (
+        executor._run_pose_target = lambda segment, *args, **kwargs: (
             calls.append(segment.target_pose) or executor._result(False, 'collision blocked'))
         segment = NS(name='pre_place', type='cartesian', target_pose='home',
                      waypoints=['door'], allow_ompl_fallback=False)

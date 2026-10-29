@@ -23,6 +23,7 @@ from __future__ import division
 import threading
 import math
 import time
+import xml.etree.ElementTree as ET
 
 from geometry_msgs.msg import Point as PointMsg
 from geometry_msgs.msg import Pose as PoseMsg
@@ -48,6 +49,15 @@ DEFAULT_TOUCH_LINKS = (
     "suction_contact_frame",
 )
 ARM_LINKS_NEVER_TOUCH_PAYLOAD = ("elfin_link5", "elfin_link6")
+
+
+def robot_link_names(robot_description):
+    """Read every link from the same expanded URDF used by MoveIt."""
+    root = ET.fromstring(robot_description)
+    names = {link.get('name') for link in root.findall('link') if link.get('name')}
+    if root.tag != 'robot' or not names:
+        raise ValueError('robot_description has no robot links')
+    return names
 
 
 def build_box_primitive(box_size):
@@ -532,11 +542,15 @@ class PlanningSceneClient(object):
             return False, "collision override: planning scene unavailable"
         acm = scene.allowed_collision_matrix
         names = set(acm.entry_names)
+        names.update(getattr(self, '_override_robot_links', ()))
         names.update(obj.id for obj in scene.world.collision_objects)
         names.update(obj.object.id for obj in scene.robot_state.attached_collision_objects)
         names.update({BOX_OBJECT_ID, DEFAULT_ATTACH_LINK, "elfin_base_link"})
         names.update("elfin_link%d" % i for i in range(7))
+        if not getattr(self, '_override_robot_links', None):
+            return False, 'collision override: robot link names unavailable'
         for name in sorted(names):
+            acm_index(acm, name)
             if name not in acm.default_entry_names:
                 acm.default_entry_names.append(name)
                 acm.default_entry_values.append(True)

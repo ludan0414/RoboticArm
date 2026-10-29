@@ -65,14 +65,68 @@ class ReachLimitTests(unittest.TestCase):
             return NS(success=True,message='done')
         executor._run_joint_goal=execute
         executor._fk_pose=lambda joints:Pose(Point(joints[0],0,0))
-        segment=MotionSegment(name='place_via_continuous',target_pose=Pose(Point(3,0,0)),
-                              waypoints=[Pose(Point(1,0,0))])
+        segment=MotionSegment(name='place_via_continuous',target_pose=Pose(Point(1.8,0,0)),
+                              waypoints=[Pose(Point(1,0,0)), Pose(Point(3,0,0)),
+                                         Pose(Point(3.2,0,0))])
         result=replan_complete_route(executor,segment,None,45,[0]*6,.5)
         self.assertTrue(result.success)
-        achieved=[item['achieved_pose']['position']['x'] for item in executor._cartesian_recovery]
+        achieved=[item['achieved_pose']['position']['x'] for item in executor._cartesian_recovery
+                  if item.get('success')]
         self.assertEqual(achieved[0],1.)
         self.assertAlmostEqual(achieved[1],2.,delta=.005)
-        self.assertEqual(segment.target_pose.position.x,3.)
+        self.assertTrue(executor._cartesian_recovery[2]['skipped_unreachable_after_boundary'])
+        self.assertAlmostEqual(achieved[-1],1.8)
+        self.assertEqual(segment.target_pose.position.x,1.8)
+
+    def test_final_target_is_never_shortened_after_boundary(self):
+        from luggage_planning.cartesian_recovery import replan_complete_route
+        executor,_=self.executor()
+        executor._reach_projections=[]
+        def execute(joints,*args,**kw):
+            executor._planned_traj=NS(joint_trajectory=NS(joint_names=['j1'],
+                points=[NS(positions=[joints[0]], velocities=[], accelerations=[],
+                    time_from_start=NS(sec=1,nanosec=0))]))
+            return NS(success=True,message='done')
+        executor._run_joint_goal=execute
+        executor._fk_pose=lambda joints:Pose(Point(joints[0],0,0))
+        segment=MotionSegment(name='pre_place',target_pose=Pose(Point(3.2,0,0)),
+                              waypoints=[Pose(Point(3,0,0))])
+        result=replan_complete_route(executor,segment,None,45,[0]*6,.5)
+        self.assertFalse(result.success)
+        self.assertIn('IK failed',result.message)
+        self.assertEqual(len(executor._reach_projections),1)
+
+    def test_reach_boundary_lowers_in_place_before_retrying_final_target(self):
+        from luggage_planning.cartesian_recovery import replan_complete_route
+        from luggage_planning.reach_limit import pose_dict
+        executor,_=self.executor()
+        executor._reach_projections=[]
+        executor._fk_pose=lambda joints:Pose(Point(joints[0],0,joints[1]))
+        calls=[]
+        def move(hop, feedback, timeout, seed, allow_reach_projection=True):
+            p=hop.target_pose.position
+            calls.append((p.x,p.z,allow_reach_projection))
+            if p.x > 2 and p.z > .5 and allow_reach_projection:
+                actual=Pose(Point(2,0,p.z))
+                executor._reach_projections.append(dict(achieved=pose_dict(actual)))
+            elif p.x > 2 and p.z > .5:
+                executor._last_ik_code=-31
+                return NS(success=False,message='IK failed error_code=-31')
+            else:
+                actual=hop.target_pose
+            executor._last_ik_code=1
+            executor._planned_traj=NS(joint_trajectory=NS(joint_names=['x','z'],
+                points=[NS(positions=[actual.position.x,actual.position.z], velocities=[],
+                    accelerations=[],time_from_start=NS(sec=1,nanosec=0))]))
+            return NS(success=True,message='done')
+        executor._run_pose_target=move
+        segment=MotionSegment(name='pre_place',target_pose=Pose(Point(3,0,.4)),
+            waypoints=[Pose(Point(3,0,1)),Pose(Point(3,0,.7))])
+        result=replan_complete_route(executor,segment,None,45,[1,1],.5)
+        self.assertTrue(result.success)
+        self.assertEqual(calls,[(3,1,True),(3,.7,False),(2,.7,False),(3,.4,False)])
+        self.assertTrue(executor._cartesian_recovery[1]['boundary_lowering'])
+        self.assertEqual(executor._cartesian_recovery[1]['achieved_pose']['position']['x'],2)
 
     def test_action_adapter_replaces_requested_waypoints_before_return_recording(self):
         import json
