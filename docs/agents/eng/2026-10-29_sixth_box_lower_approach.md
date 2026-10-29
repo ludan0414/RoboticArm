@@ -1,0 +1,5 @@
+# Sixth box lower approach
+
+Base cb78aa2. The operator reports the other seven boxes work and requests a change only for box six. In loading_119 box006, pre_place returned -31 at tool target (-1.469, -0.386, 1.439) m. This is the original 15 cm pre-place clearance on the upper box of the opposite stack. High reach is the suspected cause, not proven by a live IK probe.
+
+For measured-P2 entry with five prior boxes, cap only the sixth box's pre-place clearance at 7.5 cm. Its configured placement pose and P1/P2 remain unchanged. In the configured test geometry the box pre-place height changes from 1.3242 to 1.2492 m and the inside transit height from 1.3475 to 1.2725 m; generated routes for boxes 1–5 and 7–8 were identical to the previous setting. Seven focused doorway tests passed, including sampled configured cargo, pedestal and doorway geometry for all eight measured-entry routes. No live IK or robot movement was performed; disabled software collision checks do not validate the real environment.

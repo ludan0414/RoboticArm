@@ -21,6 +21,7 @@ P2_FORWARD_CENTRE_STEP_M = .01
 FIRST_BOX_INSIDE_DROP_M = .12
 THIRD_BOX_INSIDE_DROP_M = .08
 THIRD_BOX_PRE_PLACE_CLEARANCE_M = .075
+SIXTH_BOX_PRE_PLACE_CLEARANCE_M = .075
 FOURTH_BOX_DOOR_LOWER_M = .09
 
 
@@ -71,6 +72,11 @@ class CenteredDoorwayEntry:
         if len(prior_targets) == 2 and start_box_pose is not None:
             target = replace(target, clearance_m=min(
                 target.clearance_m, THIRD_BOX_PRE_PLACE_CLEARANCE_M))
+        # The sixth box is the top of the opposite stack. Lower its approach
+        # by 7.5 cm to reduce arm extension while retaining its release pose.
+        if len(prior_targets) == 5 and start_box_pose is not None:
+            target = replace(target, clearance_m=min(
+                target.clearance_m, SIXTH_BOX_PRE_PLACE_CLEARANCE_M))
         origin = xyz(container_pose)
         rotation = rotation_matrix(tuple(getattr(container_pose.orientation, k)
                                          for k in ('x', 'y', 'z', 'w')))
