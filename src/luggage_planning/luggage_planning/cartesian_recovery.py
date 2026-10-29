@@ -16,6 +16,7 @@ def replan_complete_route(executor, segment, feedback, timeout, current_joints, 
     trace = executor._cartesian_recovery = []
     executor._cartesian_partial = robot_traj_to_dict(getattr(partial_plan, 'solution', None))
     seed = current_joints
+    reached_boundary = False
     for index, target in enumerate(targets):
         cancel = getattr(executor, '_cancel_check', None)
         if cancel is not None and cancel():
@@ -27,15 +28,47 @@ def replan_complete_route(executor, segment, feedback, timeout, current_joints, 
         executor._notify(feedback, 'planning', segment.name, fraction,
                          'Cartesian incomplete; full-goal replan %d/%d' % (index+1, len(targets)))
         executor._planned_traj = None
-        result = executor._run_pose_target(hop, feedback, timeout, seed)
+        projection_count = len(getattr(executor, '_reach_projections', ()))
+        result = executor._run_pose_target(
+            hop, feedback, timeout, seed,
+            allow_reach_projection=not reached_boundary and index+1 < len(targets))
         trajectory = getattr(executor, '_planned_traj', None)
         item = dict(index=index, success=bool(result.success), message=result.message,
                     trajectory=robot_traj_to_dict(trajectory))
         trace.append(item)
         if not result.success:
-            result.message = '%s: full-goal replan %d/%d failed: %s' % (
-                segment.name, index+1, len(targets), result.message)
-            break
+            if (reached_boundary and index+1 < len(targets)
+                    and getattr(executor, '_last_ik_code', None) == -31
+                    and result.message.startswith('IK failed error_code=-31')):
+                # At the reach edge, lower in place before trying to reach a
+                # deeper lane. An exact IK and a full plan are still required.
+                current_pose = executor._fk_pose(seed)
+                bridge = deepcopy(hop)
+                if current_pose is not None:
+                    bridge.target_pose.position.x = current_pose.position.x
+                    bridge.target_pose.position.y = current_pose.position.y
+                if (current_pose is not None and
+                        target.position.z < current_pose.position.z - .01):
+                    result = executor._run_pose_target(
+                        bridge, feedback, timeout, seed, allow_reach_projection=False)
+                    trajectory = getattr(executor, '_planned_traj', None)
+                    item.update(success=bool(result.success), message=result.message,
+                                trajectory=robot_traj_to_dict(trajectory),
+                                boundary_lowering=True)
+                    if not result.success and not (
+                            getattr(executor, '_last_ik_code', None) == -31 and
+                            result.message.startswith('IK failed error_code=-31')):
+                        result.message = '%s: boundary lowering failed: %s' % (segment.name, result.message)
+                        break
+                if not result.success:
+                    item['skipped_unreachable_after_boundary'] = True
+                    continue
+            else:
+                result.message = '%s: full-goal replan %d/%d failed: %s' % (
+                    segment.name, index+1, len(targets), result.message)
+                break
+        if len(getattr(executor, '_reach_projections', ())) > projection_count:
+            reached_boundary = True
         if index+1 < len(targets) or getattr(executor, '_reach_projections', None):
             joint = getattr(trajectory, 'joint_trajectory', None)
             if joint is None or not joint.points:
@@ -52,7 +85,7 @@ def replan_complete_route(executor, segment, feedback, timeout, current_joints, 
                 # Earlier hops had exact IK goals; preserve them too, so the
                 # client never records unexecuted projected requests on return.
                 for previous in trace:
-                    if 'achieved_pose' not in previous:
+                    if previous['success'] and 'achieved_pose' not in previous:
                         previous['achieved_pose'] = pose_dict(targets[previous['index']])
     else:
         result.message = '%s: completed %d transit goals by replan (Cartesian fraction %.3f)' % (

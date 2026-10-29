@@ -462,7 +462,7 @@ class MotionExecutor:
                         (segment_msg.name, fraction), fraction)
                 # Site requests automatically recover incomplete Cartesian
                 # geometry, including routes whose legacy fallback flag is
-                # false. Never execute a partial prefix or skip route poses.
+                # false. Never execute a partial Cartesian prefix.
                 from luggage_planning.cartesian_recovery import replan_complete_route
                 fallback = replan_complete_route(self, segment_msg, feedback_cb,
                                                 execute_timeout, current_joints, fraction, plan)
@@ -586,11 +586,11 @@ class MotionExecutor:
         return constraints
 
     def _run_pose_target(self, segment_msg, feedback_cb, execute_timeout,
-                         current_joints=None):
+                         current_joints=None, allow_reach_projection=True):
         self._notify(feedback_cb, "planning", segment_msg.name, 0.0)
         ik_joints = self._ik_joints(segment_msg.target_pose, current_joints)
         from luggage_planning.reach_limit import is_transit_goal, closest_transit_pose, pose_dict
-        if (ik_joints is None and self._last_ik_code == -31
+        if (allow_reach_projection and ik_joints is None and self._last_ik_code == -31
                 and is_transit_goal(segment_msg.name) and current_joints):
             start = self._fk_pose(current_joints)
             if start is not None:
